@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>טופס יציאה להליך מכרזי חדש – עיריית רמת גן</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+  // ===== החלף את הערכים האלה בפרטי Firebase שלך =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyDm27uYjwTMr4BnpGQzux7eS6bEJoNn_dM",
+    authDomain: "rg-tender-approvals.firebaseapp.com",
+    projectId: "rg-tender-approvals",
+    storageBucket: "rg-tender-approvals.firebasestorage.app",
+    messagingSenderId: "309967399008",
+    appId: "1:309967399008:web:c8879c0d97f0fe63e33b05"
+  };
+  // ====================================================
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Apps Script URL לשליחת מיילים
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwMhnEL7ETubwHC8KvF2eXD2FsPOyVBclzUNjrEL-HU6bJjQ-9AIfpg4WUFyXK5dHVwpg/exec";
+
+  window.submitTenderForm = async function() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'שולח...';
+
+    const formData = {
+      // פרטי מגיש
+      deptName: document.getElementById('deptName').value,
+      submitterName: document.getElementById('submitterName').value,
+      submitterRole: document.getElementById('submitterRole').value,
+      phone: document.getElementById('phone').value,
+      submitDate: document.getElementById('submitDate').value,
+
+      // תיאור התקשרות
+      serviceTypes: Array.from(document.querySelectorAll('input[name="serviceType"]:checked')).map(x => x.value),
+      serviceDesc: document.getElementById('serviceDesc').value,
+      procurementNeed: document.getElementById('procurementNeed').value,
+      specialReqs: document.querySelector('input[name="specialReqs"]:checked')?.value,
+      specialReqsText: document.getElementById('specialReqsText').value,
+      startDate: document.getElementById('startDate').value,
+
+      // תקציב
+      totalAmount: document.getElementById('totalAmount').value,
+      multiYear: document.querySelector('input[name="multiYear"]:checked')?.value,
+      numYears: document.getElementById('numYears').value,
+      budgetSource: document.querySelector('input[name="budgetSource"]:checked')?.value,
+      tavarNum: document.getElementById('tavarNum').value,
+      budgetNum: document.getElementById('budgetNum').value,
+      budgetCalc: document.getElementById('budgetCalc').value,
+
+      // חותמים – מייל + ת.ז.
+      signers: [
+        { role: 'חשב היחידה',     email: document.getElementById('signer1Email').value, idNum: document.getElementById('signer1Id').value, status: 'pending' },
+        { role: 'מנהל היחידה',    email: document.getElementById('signer2Email').value, idNum: document.getElementById('signer2Id').value, status: 'pending' },
+        { role: 'נציג גזברות',    email: document.getElementById('signer3Email').value, idNum: document.getElementById('signer3Id').value, status: 'pending' },
+        { role: 'גזברית העירייה', email: document.getElementById('signer4Email').value, idNum: document.getElementById('signer4Id').value, status: 'pending' },
+        { role: 'מנכ"ל העירייה',  email: document.getElementById('signer5Email').value, idNum: document.getElementById('signer5Id').value, status: 'pending' },
+      ],
+      currentSignerIndex: 0,
+      status: 'in_progress',
+      createdAt: serverTimestamp(),
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, "tenders"), formData);
+      const formId = docRef.id;
+
+      // שלח מייל לחותם הראשון
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sendApprovalEmail',
+          formId,
+          signerIndex: 0,
+          signerEmail: formData.signers[0].email,
+          signerRole: formData.signers[0].role,
+          submitterName: formData.submitterName,
+          deptName: formData.deptName,
+        })
+      });
+
+      showSuccess(formId);
+    } catch (err) {
+      console.error(err);
+      btn.disabled = false;
+      btn.textContent = '✓ סיום ומעבר להדפסה';
+      alert('שגיאה בשמירה: ' + err.message);
+    }
+  };
+
+  function showSuccess(formId) {
+    document.getElementById('mainForm').style.display = 'none';
+    document.getElementById('successDiv').style.display = 'block';
+    document.getElementById('formIdDisplay').textContent = formId;
+  }
+</script>
+<style>
+:root {
+  --blue: #1a4b8c; --blue-mid: #2563b0; --blue-light: #e8f0fb;
+  --accent: #c8a84b; --text: #1c2333; --muted: #5a6478;
+  --border: #cdd5e0; --bg: #f4f6fa; --success: #2d7a4f;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--text); padding: 0 0 4rem; }
+.header { background: linear-gradient(135deg, var(--blue), var(--blue-mid)); color: white; padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 20px rgba(26,75,140,0.3); }
+.header-logo { display: flex; align-items: center; gap: 1rem; }
+.header-logo img { height: 50px; width: auto; }
+.header-title h1 { font-size: 1.3rem; font-weight: 700; }
+.header-title p { font-size: 0.8rem; opacity: 0.75; margin-top: 2px; }
+.progress-bar { height: 4px; background: rgba(255,255,255,0.2); }
+.progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s; }
+.container { max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; }
+.steps-nav { display: flex; gap: 0.5rem; margin-bottom: 2rem; background: white; border-radius: 12px; padding: 0.75rem; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+.step-btn { flex: 1; padding: 0.5rem; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 0.72rem; font-weight: 500; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; transition: all 0.2s; }
+.step-btn .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; }
+.step-btn.active { color: var(--blue); background: var(--blue-light); }
+.step-btn.active .step-num { background: var(--blue); color: white; }
+.step-btn.completed { color: var(--success); }
+.step-btn.completed .step-num { background: var(--success); color: white; }
+.section-card { background: white; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); overflow: hidden; animation: fadeSlide 0.3s ease; }
+@keyframes fadeSlide { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+.section-header { background: linear-gradient(135deg, var(--blue), var(--blue-mid)); padding: 1.2rem 1.75rem; display: flex; align-items: center; gap: 0.75rem; }
+.section-icon { width: 34px; height: 34px; background: rgba(255,255,255,0.15); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+.section-header h2 { color: white; font-size: 1rem; font-weight: 600; }
+.section-body { padding: 1.75rem; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+.span-2 { grid-column: span 2; }
+.field { display: flex; flex-direction: column; gap: 0.3rem; }
+.field label { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.field label .required { color: #e53e3e; }
+.field input, .field textarea, .field select { font-family: inherit; font-size: 0.9rem; border: 1.5px solid var(--border); border-radius: 8px; padding: 0.6rem 0.85rem; color: var(--text); background: var(--bg); outline: none; transition: all 0.2s; }
+.field input:focus, .field textarea:focus { border-color: var(--blue-mid); background: white; box-shadow: 0 0 0 3px rgba(37,99,176,0.1); }
+.field textarea { resize: vertical; min-height: 90px; }
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.25rem; }
+.checkbox-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.86rem; font-weight: 500; padding: 0.4rem 0.8rem; border: 1.5px solid var(--border); border-radius: 8px; background: var(--bg); transition: all 0.18s; user-select: none; }
+.checkbox-item:has(input:checked) { border-color: var(--blue); background: var(--blue-light); color: var(--blue); }
+.checkbox-item input { width: 15px; height: 15px; accent-color: var(--blue); cursor: pointer; }
+.radio-group { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.radio-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.86rem; padding: 0.4rem 1rem; border: 1.5px solid var(--border); border-radius: 8px; background: var(--bg); transition: all 0.18s; user-select: none; }
+.radio-item:has(input:checked) { border-color: var(--blue); background: var(--blue-light); color: var(--blue); font-weight: 500; }
+.radio-item input { accent-color: var(--blue); }
+.amount-wrap { position: relative; }
+.amount-wrap input { padding-left: 2.5rem; }
+.amount-symbol { position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); font-size: 0.9rem; color: var(--muted); font-weight: 600; pointer-events: none; }
+.info-box { background: #fffbea; border: 1px solid #f0d060; border-radius: 8px; padding: 0.7rem 1rem; font-size: 0.8rem; color: #7a5a00; display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.divider { height: 1px; background: var(--bg); margin: 1.4rem 0; }
+.budget-sources { display: flex; gap: 1rem; flex-wrap: wrap; }
+.budget-source-card { flex: 1; min-width: 180px; border: 1.5px solid var(--border); border-radius: 10px; padding: 1rem; background: var(--bg); }
+.budget-source-card:has(input:checked) { border-color: var(--blue); background: var(--blue-light); }
+.budget-source-card > label { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; margin-bottom: 0.5rem; }
+.nav-buttons { display: flex; justify-content: space-between; margin-top: 1.75rem; }
+.btn { font-family: inherit; font-size: 0.9rem; font-weight: 600; padding: 0.7rem 1.75rem; border-radius: 10px; border: none; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 0.5rem; }
+.btn-primary { background: var(--blue); color: white; box-shadow: 0 4px 12px rgba(26,75,140,0.3); }
+.btn-primary:hover { background: var(--blue-mid); transform: translateY(-1px); }
+.btn-secondary { background: white; color: var(--blue); border: 1.5px solid var(--blue); }
+.btn-secondary:hover { background: var(--blue-light); }
+.btn-success { background: linear-gradient(135deg, var(--success), #1a5e3a); color: white; font-size: 1rem; padding: 0.8rem 2.5rem; }
+.step-page { display: none; }
+.step-page.active { display: block; }
+.hidden { display: none !important; }
+
+/* Signers section */
+.signer-card { border: 1.5px solid var(--border); border-radius: 12px; padding: 1.25rem; background: var(--bg); margin-bottom: 1rem; }
+.signer-card:last-child { margin-bottom: 0; }
+.signer-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.signer-num { width: 30px; height: 30px; background: var(--blue); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
+.signer-header h4 { font-size: 0.95rem; font-weight: 700; color: var(--blue); }
+.signer-note { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+/* Success screen */
+.success-screen { text-align: center; padding: 3rem 2rem; background: white; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); }
+.checkmark { width: 80px; height: 80px; background: linear-gradient(135deg, var(--success), #1a5e3a); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 1.5rem; animation: popIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275); }
+@keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.success-screen h2 { font-size: 1.5rem; color: var(--success); margin-bottom: 0.5rem; }
+.form-id-box { display: inline-block; margin-top: 1rem; background: var(--blue-light); color: var(--blue); font-weight: 700; font-size: 0.85rem; padding: 0.5rem 1.25rem; border-radius: 8px; letter-spacing: 0.03em; direction: ltr; }
+
+@media (max-width: 600px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .span-2 { grid-column: span 1; }
+  .steps-nav { gap: 0.2rem; }
+  .step-btn { font-size: 0.62rem; }
+  .header { padding: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-logo">
+    <img src="ramat-gan-logo.jpg" alt="עיריית רמת גן" onerror="this.style.display='none'" />
+    <div class="header-title">
+      <h1>טופס יציאה להליך מכרזי חדש</h1>
+      <p>עיריית רמת גן – אגף הכספים</p>
+    </div>
+  </div>
+  <div id="headerDate" style="font-size:0.85rem; opacity:0.85;"></div>
+</header>
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+<div class="container">
+  <div class="steps-nav" id="stepsNav">
+    <button class="step-btn active" onclick="goToStep(1)" id="stepBtn1"><span class="step-num">1</span>פרטי מגיש</button>
+    <button class="step-btn" onclick="goToStep(2)" id="stepBtn2"><span class="step-num">2</span>תיאור</button>
+    <button class="step-btn" onclick="goToStep(3)" id="stepBtn3"><span class="step-num">3</span>תקציב</button>
+    <button class="step-btn" onclick="goToStep(4)" id="stepBtn4"><span class="step-num">4</span>חותמים</button>
+    <button class="step-btn" onclick="goToStep(5)" id="stepBtn5"><span class="step-num">5</span>סיכום</button>
+  </div>
+
+  <div id="mainForm">
+
+  <!-- STEP 1 -->
+  <div class="step-page active" id="step1">
+    <div class="section-card">
+      <div class="section-header"><div class="section-icon">👤</div><h2>פרטי מגיש הבקשה</h2></div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="field"><label>שם האגף <span class="required">*</span></label><input type="text" id="deptName" /></div>
+          <div class="field"><label>שם מגיש הבקשה <span class="required">*</span></label><input type="text" id="submitterName" /></div>
+          <div class="field"><label>תפקיד <span class="required">*</span></label><input type="text" id="submitterRole" /></div>
+          <div class="field"><label>טלפון נייד <span class="required">*</span></label><input type="tel" id="phone" dir="ltr" /></div>
+          <div class="field"><label>תאריך הגשה</label><input type="date" id="submitDate" dir="ltr" /></div>
+        </div>
+        <div class="nav-buttons"><span></span><button class="btn btn-primary" onclick="nextStep(1)">המשך ←</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step-page" id="step2">
+    <div class="section-card">
+      <div class="section-header"><div class="section-icon">📋</div><h2>תיאור ההתקשרות המבוקשת</h2></div>
+      <div class="section-body">
+        <div class="field">
+          <label>סוג השירותים <span class="required">*</span></label>
+          <div class="checkbox-group">
+            <label class="checkbox-item"><input type="checkbox" name="serviceType" value="שירותים שוטפים" /><span>שירותים שוטפים</span></label>
+            <label class="checkbox-item"><input type="checkbox" name="serviceType" value="פרויקטאלי" /><span>פרויקטאלי</span></label>
+            <label class="checkbox-item"><input type="checkbox" name="serviceType" value="שירותי יעוץ" /><span>שירותי יעוץ</span></label>
+            <label class="checkbox-item"><input type="checkbox" name="serviceType" value="טובין" /><span>טובין</span></label>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="field"><label>פירוט השירות / המוצר <span class="required">*</span></label><textarea id="serviceDesc" rows="4"></textarea></div>
+        <div class="field" style="margin-top:1rem"><label>פירוט הצורך למכרז <span class="required">*</span></label><textarea id="procurementNeed" rows="3"></textarea></div>
+        <div class="divider"></div>
+        <div class="field">
+          <label>האם קיימות דרישות סף חריגות?</label>
+          <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="specialReqs" value="לא" onchange="document.getElementById('specialReqsField').classList.add('hidden')" checked /><span>לא</span></label>
+            <label class="radio-item"><input type="radio" name="specialReqs" value="כן" onchange="document.getElementById('specialReqsField').classList.remove('hidden')" /><span>כן</span></label>
+          </div>
+        </div>
+        <div class="field hidden" id="specialReqsField" style="margin-top:0.5rem"><label>פירוט</label><textarea id="specialReqsText" rows="2"></textarea></div>
+        <div class="field" style="margin-top:1rem; max-width:260px"><label>תאריך תחילת ההתקשרות <span class="required">*</span></label><input type="date" id="startDate" dir="ltr" /></div>
+        <div class="nav-buttons"><button class="btn btn-secondary" onclick="prevStep(2)">← חזור</button><button class="btn btn-primary" onclick="nextStep(2)">המשך ←</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step-page" id="step3">
+    <div class="section-card">
+      <div class="section-header"><div class="section-icon">💰</div><h2>פירוט התקציב</h2></div>
+      <div class="section-body">
+        <div class="field" style="max-width:300px">
+          <label>סכום מוערך (כולל מע"מ) <span class="required">*</span></label>
+          <div class="amount-wrap"><input type="number" id="totalAmount" min="0" dir="ltr" /><span class="amount-symbol">₪</span></div>
+        </div>
+        <div class="info-box">ℹ️ הסכום ישוריין ע"י אגף הגזברות עד לסוף השנה הקלנדרית.</div>
+        <div class="divider"></div>
+        <div class="field">
+          <label>התחייבות תקציבית רב-שנתית?</label>
+          <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="multiYear" value="לא" onchange="document.getElementById('numYearsField').classList.add('hidden')" checked /><span>לא</span></label>
+            <label class="radio-item"><input type="radio" name="multiYear" value="כן" onchange="document.getElementById('numYearsField').classList.remove('hidden')" /><span>כן</span></label>
+          </div>
+        </div>
+        <div class="field hidden" id="numYearsField" style="max-width:180px; margin-top:0.5rem"><label>מספר שנים</label><input type="number" id="numYears" min="2" max="10" dir="ltr" /></div>
+        <div class="divider"></div>
+        <div class="field">
+          <label>מקור תקציבי <span class="required">*</span></label>
+          <div class="budget-sources">
+            <div class="budget-source-card"><label><input type="radio" name="budgetSource" value="תבר" />תב"ר</label><div class="field"><label>מס' תב"ר</label><input type="text" id="tavarNum" /></div></div>
+            <div class="budget-source-card"><label><input type="radio" name="budgetSource" value="רגיל" />תקציב רגיל</label><div class="field"><label>מס' תקציב</label><input type="text" id="budgetNum" /></div></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="field"><label>פירוט תחשיב הסכום <span class="required">*</span></label><textarea id="budgetCalc" rows="4"></textarea></div>
+        <div class="nav-buttons"><button class="btn btn-secondary" onclick="prevStep(3)">← חזור</button><button class="btn btn-primary" onclick="nextStep(3)">המשך ←</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: חותמים -->
+  <div class="step-page" id="step4">
+    <div class="section-card">
+      <div class="section-header"><div class="section-icon">✍️</div><h2>גורמי החתימה בשרשרת</h2></div>
+      <div class="section-body">
+        <p style="font-size:0.83rem; color:var(--muted); margin-bottom:1.25rem;">הזן מייל ותעודת זהות של כל חותם. לאחר השליחה יישלח מייל לכל גורם בתורו לאישור.</p>
+
+        <div class="signer-card">
+          <div class="signer-header"><div class="signer-num">1</div><div><h4>חשב היחידה</h4><div class="signer-note">יאשר ראשון</div></div></div>
+          <div class="form-grid">
+            <div class="field"><label>כתובת מייל <span class="required">*</span></label><input type="email" id="signer1Email" dir="ltr" /></div>
+            <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="signer1Id" dir="ltr" maxlength="9" /></div>
+          </div>
+        </div>
+
+        <div class="signer-card">
+          <div class="signer-header"><div class="signer-num">2</div><div><h4>מנהל היחידה</h4><div class="signer-note">יאשר שני</div></div></div>
+          <div class="form-grid">
+            <div class="field"><label>כתובת מייל <span class="required">*</span></label><input type="email" id="signer2Email" dir="ltr" /></div>
+            <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="signer2Id" dir="ltr" maxlength="9" /></div>
+          </div>
+        </div>
+
+        <div class="signer-card">
+          <div class="signer-header"><div class="signer-num">3</div><div><h4>נציג גזברות</h4><div class="signer-note">יאשר שלישי</div></div></div>
+          <div class="form-grid">
+            <div class="field"><label>כתובת מייל <span class="required">*</span></label><input type="email" id="signer3Email" dir="ltr" /></div>
+            <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="signer3Id" dir="ltr" maxlength="9" /></div>
+          </div>
+        </div>
+
+        <div class="signer-card">
+          <div class="signer-header"><div class="signer-num">4</div><div><h4>גזברית העירייה</h4><div class="signer-note">תאשר רביעית</div></div></div>
+          <div class="form-grid">
+            <div class="field"><label>כתובת מייל <span class="required">*</span></label><input type="email" id="signer4Email" dir="ltr" /></div>
+            <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="signer4Id" dir="ltr" maxlength="9" /></div>
+          </div>
+        </div>
+
+        <div class="signer-card">
+          <div class="signer-header"><div class="signer-num">5</div><div><h4>מנכ"ל העירייה</h4><div class="signer-note">יאשר אחרון</div></div></div>
+          <div class="form-grid">
+            <div class="field"><label>כתובת מייל <span class="required">*</span></label><input type="email" id="signer5Email" dir="ltr" /></div>
+            <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="signer5Id" dir="ltr" maxlength="9" /></div>
+          </div>
+        </div>
+
+        <div class="nav-buttons"><button class="btn btn-secondary" onclick="prevStep(4)">← חזור</button><button class="btn btn-primary" onclick="nextStep(4)">המשך ←</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5: סיכום -->
+  <div class="step-page" id="step5">
+    <div class="section-card">
+      <div class="section-header"><div class="section-icon">📄</div><h2>סיכום ושליחה</h2></div>
+      <div class="section-body" id="summaryBody"></div>
+    </div>
+  </div>
+
+  </div><!-- end mainForm -->
+
+  <!-- Success -->
+  <div class="success-screen" id="successDiv" style="display:none">
+    <div class="checkmark">✓</div>
+    <h2>הטופס נשלח בהצלחה!</h2>
+    <p>מייל נשלח לחשב היחידה לאישור ראשון.</p>
+    <p style="margin-top:0.5rem; font-size:0.85rem; color:var(--muted);">מספר הטופס לעקיבה:</p>
+    <div class="form-id-box" id="formIdDisplay"></div>
+    <button class="btn btn-secondary" style="margin:1.5rem auto 0; display:flex;" onclick="location.reload()">+ טופס חדש</button>
+  </div>
+</div>
+
+<script>
+let currentStep = 1;
+const totalSteps = 5;
+
+const today = new Date();
+document.getElementById('submitDate').value = today.toISOString().split('T')[0];
+document.getElementById('headerDate').textContent = today.toLocaleDateString('he-IL', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+function updateProgress() {
+  document.getElementById('progressFill').style.width = ((currentStep-1)/(totalSteps-1)*100) + '%';
+}
+function goToStep(step) {
+  document.getElementById('step'+currentStep).classList.remove('active');
+  const ob = document.getElementById('stepBtn'+currentStep);
+  ob.classList.remove('active');
+  if (step > currentStep) { ob.classList.add('completed'); ob.querySelector('.step-num').textContent='✓'; }
+  currentStep = step;
+  document.getElementById('step'+currentStep).classList.add('active');
+  const nb = document.getElementById('stepBtn'+currentStep);
+  nb.classList.add('active'); nb.classList.remove('completed');
+  nb.querySelector('.step-num').textContent = currentStep;
+  updateProgress();
+  window.scrollTo({top:0, behavior:'smooth'});
+  if (step===5) buildSummary();
+}
+function nextStep(f) { if (validateStep(f)) goToStep(f+1); }
+function prevStep(f) { goToStep(f-1); }
+
+function validateStep(step) {
+  const req = {
+    1:['deptName','submitterName','submitterRole','phone'],
+    2:['serviceDesc','procurementNeed','startDate'],
+    3:['totalAmount','budgetCalc'],
+    4:['signer1Email','signer1Id','signer2Email','signer2Id','signer3Email','signer3Id','signer4Email','signer4Id','signer5Email','signer5Id'],
+    5:[]
+  };
+  let valid = true;
+  (req[step]||[]).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el||!el.value.trim()) {
+      if(el){el.style.borderColor='#e53e3e';el.style.background='#fff5f5';}
+      valid=false;
+      if(el) el.addEventListener('input',()=>{el.style.borderColor='';el.style.background='';},{once:true});
+    }
+  });
+  if (step===2 && !document.querySelectorAll('input[name="serviceType"]:checked').length) { valid=false; }
+  if (!valid) { const f=document.querySelector('[style*="e53e3e"]'); if(f) f.scrollIntoView({behavior:'smooth',block:'center'}); }
+  return valid;
+}
+
+function buildSummary() {
+  const types = Array.from(document.querySelectorAll('input[name="serviceType"]:checked')).map(x=>x.value).join(', ');
+  const bs = document.querySelector('input[name="budgetSource"]:checked')?.value;
+  const rows = [
+    ['אגף', document.getElementById('deptName').value],
+    ['מגיש', document.getElementById('submitterName').value + ' – ' + document.getElementById('submitterRole').value],
+    ['טלפון', document.getElementById('phone').value],
+    ['סוג שירות', types],
+    ['שירות', document.getElementById('serviceDesc').value.substring(0,100) + '...'],
+    ['סכום', '₪' + Number(document.getElementById('totalAmount').value||0).toLocaleString('he-IL')],
+    ['מקור תקציבי', bs==='תבר'?'תב"ר':bs==='רגיל'?'תקציב רגיל':''],
+    ['תחשיב', document.getElementById('budgetCalc').value.substring(0,80) + '...'],
+    ['חשב יחידה', document.getElementById('signer1Email').value],
+    ['מנהל יחידה', document.getElementById('signer2Email').value],
+    ['נציג גזברות', document.getElementById('signer3Email').value],
+    ['גזברית', document.getElementById('signer4Email').value],
+    ['מנכ"ל', document.getElementById('signer5Email').value],
+  ];
+  let html = '<table style="width:100%; border-collapse:collapse; font-size:0.88rem;">';
+  rows.forEach(([k,v]) => {
+    html += `<tr style="border-bottom:1px solid #eee"><td style="padding:0.6rem 0.5rem; font-weight:600; color:#5a6478; width:35%; white-space:nowrap">${k}</td><td style="padding:0.6rem 0.5rem">${v||'—'}</td></tr>`;
+  });
+  html += '</table>';
+  html += `<div style="display:flex; justify-content:space-between; margin-top:1.75rem">
+    <button class="btn btn-secondary" onclick="prevStep(5)">← חזור לעריכה</button>
+    <button class="btn btn-success" id="submitBtn" onclick="submitTenderForm()">📤 שלח לאישור</button>
+  </div>`;
+  document.getElementById('summaryBody').innerHTML = html;
+}
+
+updateProgress();
+</script>
+</body>
+</html>
