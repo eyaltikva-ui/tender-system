@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-  import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, updateDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDm27uYjwTMr4BnpGQzux7eS6bEJoNn_dM",
@@ -28,6 +28,7 @@
   const signerIdx = parseInt(params.get('idx') || '0');
 
   let formData = null;
+  let pendingDecision = null;
 
   async function init() {
     if (!formId) { showError('קישור לא תקין'); return; }
@@ -35,14 +36,11 @@
       const snap = await getDoc(doc(db, 'tenders', formId));
       if (!snap.exists()) { showError('הטופס לא נמצא'); return; }
       formData = snap.data();
-
       if (formData.status === 'completed') { showAlreadyDone('הטופס אושר במלואו'); return; }
       if (formData.status === 'rejected')  { showAlreadyDone('הטופס נדחה'); return; }
-
       const signer = formData.signers?.[signerIdx];
       if (!signer) { showError('גורם חתימה לא נמצא'); return; }
       if (signer.status !== 'pending') { showAlreadyDone('כבר טיפלת בטופס זה'); return; }
-
       renderForm(formData, signer);
     } catch(e) {
       showError('שגיאה בטעינת הטופס: ' + e.message);
@@ -52,7 +50,6 @@
   function renderForm(d, signer) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('mainContent').style.display = 'block';
-
     document.getElementById('signerRoleTitle').textContent = signer.role;
     document.getElementById('deptVal').textContent = d.deptName;
     document.getElementById('submitterVal').textContent = d.submitterName + ' – ' + d.submitterRole;
@@ -62,38 +59,34 @@
     document.getElementById('budgetVal').textContent = d.budgetSource === 'תבר' ? 'תב"ר ' + (d.tavarNum||'') : 'תקציב רגיל ' + (d.budgetNum||'');
     document.getElementById('calcVal').textContent = d.budgetCalc;
     document.getElementById('startVal').textContent = d.startDate || '';
-
-    // הצג חתימת המגיש
     if (d.submitterSig) {
       const img = document.getElementById('submitterSigImg');
       img.src = d.submitterSig;
       img.style.display = 'block';
     }
-
     // חתימות קודמות
     const prevSigs = (d.signers||[]).slice(0, signerIdx).filter(s=>s.status==='approved'&&s.signature);
-    const prevDiv = document.getElementById('prevSignatures');
     if (prevSigs.length > 0) {
-      prevDiv.innerHTML = '<h3 style="font-size:0.9rem;color:var(--blue);margin-bottom:0.75rem;">חתימות קודמות</h3>' +
-        prevSigs.map(s=>`
-          <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;padding:0.75rem;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
-            <div>
-              <div style="font-weight:600;font-size:0.85rem">${s.role}</div>
-              <div style="font-size:0.78rem;color:var(--muted)">${s.name} | ת.ז. ${s.idNum}</div>
-            </div>
-            <img src="${s.signature}" style="height:50px;border:1px solid var(--border);border-radius:4px;background:white;margin-right:auto;" />
-          </div>`).join('');
+      const prevDiv = document.getElementById('prevSignatures');
       prevDiv.style.display = 'block';
+      document.getElementById('prevSigsBody').innerHTML = prevSigs.map(s=>`
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem;padding:0.75rem;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
+          <div>
+            <div style="font-weight:600;font-size:0.85rem">${s.role}</div>
+            <div style="font-size:0.78rem;color:var(--muted)">${s.name} | ת.ז. ${s.idNum}</div>
+          </div>
+          <img src="${s.signature}" style="height:50px;border:1px solid var(--border);border-radius:4px;background:white;margin-right:auto;" />
+        </div>`).join('');
     }
   }
 
-  window.isCanvasEmpty = function(canvas) {
+  function isCanvasEmpty(canvas) {
     const data = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
-    for (let i=3; i<data.length; i+=4) { if (data[i]>0) return false; }
+    for (let i=3; i<data.length; i+=4) { if(data[i]>0) return false; }
     return true;
-  };
+  }
 
-  window.submitDecision = async function(decision) {
+  window.requestDecision = async function(decision) {
     const name  = document.getElementById('signerName').value.trim();
     const idNum = document.getElementById('signerId').value.trim();
     const note  = document.getElementById('noteText').value.trim();
@@ -105,12 +98,76 @@
       if (isCanvasEmpty(canvas)) { alert('נדרשת חתימה'); canvas.style.borderColor='#e53e3e'; return; }
     }
     if ((decision==='reject'||decision==='return') && !note) {
-      alert('יש להזין הערה / סיבה'); return; }
+      alert('יש להזין הערה / סיבה'); return;
+    }
 
-    const btns = document.querySelectorAll('.action-btn');
-    btns.forEach(b=>b.disabled=true);
+    // שמור את ההחלטה הממתינה
+    pendingDecision = decision;
 
+    // צור OTP ושמור ב-Firebase
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 דקות
+
+    await setDoc(doc(db, 'otps', formId + '_' + signerIdx), {
+      otp,
+      expiry: otpExpiry,
+      createdAt: serverTimestamp(),
+    });
+
+    // שלח OTP במייל
+    const signerEmail = formData.signers[signerIdx].email;
+    const signerRole  = formData.signers[signerIdx].role;
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        action: 'sendOTPEmail',
+        signerEmail,
+        signerRole,
+        otp,
+        deptName: formData.deptName,
+      })
+    });
+
+    // הצג מסך OTP
+    document.getElementById('mainContent').style.display = 'none';
+    document.getElementById('otpScreen').style.display = 'block';
+    document.getElementById('otpEmailDisplay').textContent = signerEmail;
+  };
+
+  window.verifyOTP = async function() {
+    const entered = document.getElementById('otpInput').value.trim();
+    if (entered.length !== 6) { alert('יש להזין קוד 6 ספרות'); return; }
+
+    const btn = document.getElementById('otpVerifyBtn');
+    btn.disabled = true;
+    btn.textContent = 'מאמת...';
+
+    try {
+      const otpSnap = await getDoc(doc(db, 'otps', formId + '_' + signerIdx));
+      if (!otpSnap.exists()) { btn.disabled=false; btn.textContent='אמת קוד'; alert('קוד לא נמצא, נסה שוב'); return; }
+      const otpData = otpSnap.data();
+      if (Date.now() > otpData.expiry) { btn.disabled=false; btn.textContent='אמת קוד'; alert('הקוד פג תוקף. חזור והתחל מחדש.'); return; }
+      if (entered !== otpData.otp) {
+        btn.disabled=false; btn.textContent='אמת קוד';
+        document.getElementById('otpError').style.display='block';
+        return;
+      }
+      // OTP נכון — בצע את ההחלטה
+      await completeDecision(pendingDecision);
+    } catch(e) {
+      btn.disabled=false; btn.textContent='אמת קוד';
+      alert('שגיאה: ' + e.message);
+    }
+  };
+
+  async function completeDecision(decision) {
+    const name   = document.getElementById('signerName').value.trim();
+    const idNum  = document.getElementById('signerId').value.trim();
+    const note   = document.getElementById('noteText').value.trim();
+    const canvas = document.getElementById('sigCanvas');
     const sigData = isCanvasEmpty(canvas) ? '' : canvas.toDataURL();
+
     const updatedSigners = [...formData.signers];
     updatedSigners[signerIdx] = {
       ...updatedSigners[signerIdx],
@@ -122,52 +179,36 @@
     };
 
     const isLast = signerIdx === updatedSigners.length - 1;
-    const newStatus = decision === 'approve' && isLast ? 'completed'
-                    : decision === 'approve' ? 'in_progress'
-                    : decision;
+    const newStatus = decision==='approve'&&isLast ? 'completed' : decision==='approve' ? 'in_progress' : decision;
 
     await updateDoc(doc(db, 'tenders', formId), {
       signers: updatedSigners,
-      currentSignerIndex: decision === 'approve' ? signerIdx + 1 : signerIdx,
+      currentSignerIndex: decision==='approve' ? signerIdx+1 : signerIdx,
       status: newStatus,
     });
 
-    const base = {
-      formId,
-      deptName: formData.deptName,
-      submitterName: formData.submitterName,
-      prevSignerRole: updatedSigners[signerIdx].role,
-      note,
-    };
+    const base = { formId, deptName: formData.deptName, submitterName: formData.submitterName, prevSignerRole: updatedSigners[signerIdx].role, note };
 
-    if (decision === 'approve' && isLast) {
-      await fetch(APPS_SCRIPT_URL, {
-        method:'POST', mode:'no-cors',
-        body: JSON.stringify({ ...base, action:'sendCompletedEmail', allSignerEmails: updatedSigners.map(s=>s.email) })
-      });
-    } else if (decision === 'approve') {
+    if (decision==='approve' && isLast) {
+      await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors',
+        body: JSON.stringify({ ...base, action:'sendCompletedEmail', allSignerEmails: updatedSigners.map(s=>s.email) }) });
+    } else if (decision==='approve') {
       const next = updatedSigners[signerIdx+1];
-      await fetch(APPS_SCRIPT_URL, {
-        method:'POST', mode:'no-cors',
-        body: JSON.stringify({ ...base, action:'sendApprovalEmail', signerIndex:signerIdx+1, signerEmail:next.email, signerRole:next.role })
-      });
-    } else if (decision === 'reject') {
-      await fetch(APPS_SCRIPT_URL, {
-        method:'POST', mode:'no-cors',
-        body: JSON.stringify({ ...base, action:'sendRejectedEmail', signerEmail: formData.signers[0].email })
-      });
-    } else if (decision === 'return') {
-      await fetch(APPS_SCRIPT_URL, {
-        method:'POST', mode:'no-cors',
-        body: JSON.stringify({ ...base, action:'sendReturnedEmail', signerEmail: formData.signers[0].email })
-      });
+      await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors',
+        body: JSON.stringify({ ...base, action:'sendApprovalEmail', signerIndex:signerIdx+1, signerEmail:next.email, signerRole:next.role }) });
+    } else if (decision==='reject') {
+      await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors',
+        body: JSON.stringify({ ...base, action:'sendRejectedEmail', signerEmail: formData.signers[0].email }) });
+    } else if (decision==='return') {
+      await fetch(APPS_SCRIPT_URL, { method:'POST', mode:'no-cors',
+        body: JSON.stringify({ ...base, action:'sendReturnedEmail', signerEmail: formData.signers[0].email }) });
     }
 
     showDone(decision);
-  };
+  }
 
   function showDone(decision) {
-    document.getElementById('mainContent').style.display = 'none';
+    document.getElementById('otpScreen').style.display = 'none';
     const d = document.getElementById('doneScreen');
     d.style.display = 'block';
     if (decision==='approve') {
@@ -179,12 +220,8 @@
     }
   }
 
-  function showError(msg) {
-    document.getElementById('loading').innerHTML = `<div style="text-align:center;padding:3rem;color:#dc2626">${msg}</div>`;
-  }
-  function showAlreadyDone(msg) {
-    document.getElementById('loading').innerHTML = `<div style="text-align:center;padding:3rem;color:var(--muted);font-size:1rem">${msg}</div>`;
-  }
+  function showError(msg) { document.getElementById('loading').innerHTML=`<div style="text-align:center;padding:3rem;color:#dc2626">${msg}</div>`; }
+  function showAlreadyDone(msg) { document.getElementById('loading').innerHTML=`<div style="text-align:center;padding:3rem;color:var(--muted)">${msg}</div>`; }
 
   init();
 </script>
@@ -218,11 +255,21 @@ canvas#sigCanvas{display:block;width:100%;height:140px;cursor:crosshair;touch-ac
 .btn-approve{background:linear-gradient(135deg,#2d7a4f,#1a5e3a);color:white;}
 .btn-return{background:linear-gradient(135deg,#d97706,#b45309);color:white;}
 .btn-reject{background:linear-gradient(135deg,#dc2626,#b91c1c);color:white;}
+/* OTP */
+.otp-screen{text-align:center;padding:3rem 2rem;background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.07);display:none;}
+.otp-icon{width:70px;height:70px;background:linear-gradient(135deg,var(--blue),var(--blue-mid));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 1.25rem;}
+.otp-screen h2{font-size:1.3rem;color:var(--blue);margin-bottom:0.5rem;}
+.otp-screen p{color:var(--muted);font-size:0.9rem;margin-bottom:1.5rem;}
+.otp-input{font-family:inherit;font-size:2rem;font-weight:700;letter-spacing:0.5rem;width:220px;text-align:center;border:2px solid var(--border);border-radius:12px;padding:0.75rem 1rem;color:var(--text);background:var(--bg);outline:none;direction:ltr;}
+.otp-input:focus{border-color:var(--blue-mid);background:white;box-shadow:0 0 0 3px rgba(37,99,176,0.15);}
+.otp-verify-btn{margin-top:1.25rem;font-family:inherit;font-size:1rem;font-weight:700;padding:0.8rem 2.5rem;background:linear-gradient(135deg,var(--blue),var(--blue-mid));color:white;border:none;border-radius:10px;cursor:pointer;display:block;width:100%;max-width:280px;margin-left:auto;margin-right:auto;}
+.otp-error{color:#dc2626;font-size:0.85rem;margin-top:0.5rem;display:none;}
+.otp-note{font-size:0.78rem;color:var(--muted);margin-top:1rem;}
+/* done */
 .done-icon{width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 1.25rem;animation:popIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275);}
 @keyframes popIn{from{transform:scale(0);opacity:0;}to{transform:scale(1);opacity:1;}}
 #doneScreen{text-align:center;padding:3rem 2rem;background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.07);display:none;}
 #doneScreen h2{font-size:1.4rem;margin-bottom:0.5rem;}
-#prevSignatures{display:none;margin-bottom:1rem;}
 </style>
 </head>
 <body>
@@ -238,7 +285,6 @@ canvas#sigCanvas{display:block;width:100%;height:140px;cursor:crosshair;touch-ac
   <div id="loading" style="text-align:center;padding:4rem;color:var(--muted)">טוען...</div>
 
   <div id="mainContent" style="display:none">
-
     <div class="card">
       <div class="card-header"><div class="card-icon">📋</div><h2>פרטי הטופס</h2></div>
       <div class="card-body">
@@ -267,7 +313,7 @@ canvas#sigCanvas{display:block;width:100%;height:140px;cursor:crosshair;touch-ac
     <div class="card">
       <div class="card-header"><div class="card-icon">✍️</div><h2 id="signerRoleTitle">חתימתך</h2></div>
       <div class="card-body">
-        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1.25rem;">הזן את פרטיך וחתום בתיבה למטה, לאחר מכן בחר פעולה.</p>
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1.25rem;">הזן את פרטיך וחתום. לאחר לחיצה על "אשר" יישלח קוד אימות למייל שלך.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
           <div class="field">
             <label>שם מלא <span style="color:#e53e3e">*</span></label>
@@ -293,14 +339,25 @@ canvas#sigCanvas{display:block;width:100%;height:140px;cursor:crosshair;touch-ac
           <textarea id="noteText" rows="3" placeholder="הערות, סיבת דחייה..."></textarea>
         </div>
         <div class="action-buttons">
-          <button class="action-btn btn-approve" onclick="submitDecision('approve')">✓ אשר והעבר הלאה</button>
-          <button class="action-btn btn-return" onclick="submitDecision('return')">↩ החזר לתיקון</button>
-          <button class="action-btn btn-reject" onclick="submitDecision('reject')">✗ דחה</button>
+          <button class="action-btn btn-approve" onclick="requestDecision('approve')">✓ אשר והעבר הלאה</button>
+          <button class="action-btn btn-return" onclick="requestDecision('return')">↩ החזר לתיקון</button>
+          <button class="action-btn btn-reject" onclick="requestDecision('reject')">✗ דחה</button>
         </div>
       </div>
     </div>
+  </div>
 
-  </div><!-- mainContent -->
+  <!-- מסך OTP -->
+  <div class="otp-screen" id="otpScreen">
+    <div class="otp-icon">🔐</div>
+    <h2>אימות זהות</h2>
+    <p>קוד אימות נשלח למייל:<br><strong id="otpEmailDisplay"></strong></p>
+    <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1.5rem;">הזן את הקוד לאישור החתימה:</p>
+    <input class="otp-input" id="otpInput" type="text" maxlength="6" placeholder="_ _ _ _ _ _" inputmode="numeric" />
+    <div class="otp-error" id="otpError">קוד שגוי, נסה שוב</div>
+    <button class="otp-verify-btn" id="otpVerifyBtn" onclick="verifyOTP()">אמת וחתום ✓</button>
+    <p class="otp-note">הקוד בתוקף ל-10 דקות</p>
+  </div>
 
   <div id="doneScreen"></div>
 </div>
@@ -313,10 +370,9 @@ ctx.lineWidth = 2.5;
 ctx.lineCap = 'round';
 ctx.lineJoin = 'round';
 let drawing=false, lastX=0, lastY=0;
-
 function getPos(e){
   const r=canvas.getBoundingClientRect();
-  const sx=canvas.width/r.width, sy=canvas.height/r.height;
+  const sx=canvas.width/r.width,sy=canvas.height/r.height;
   if(e.touches) return [(e.touches[0].clientX-r.left)*sx,(e.touches[0].clientY-r.top)*sy];
   return [(e.clientX-r.left)*sx,(e.clientY-r.top)*sy];
 }
@@ -328,6 +384,11 @@ canvas.addEventListener('touchstart',e=>{e.preventDefault();drawing=true;[lastX,
 canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!drawing)return;const[x,y]=getPos(e);ctx.beginPath();ctx.moveTo(lastX,lastY);ctx.lineTo(x,y);ctx.stroke();[lastX,lastY]=[x,y];},{passive:false});
 canvas.addEventListener('touchend',()=>drawing=false);
 function clearSig(){ctx.clearRect(0,0,canvas.width,canvas.height);canvas.style.borderColor='';}
+
+// OTP: Enter key
+document.getElementById('otpInput').addEventListener('keydown', e=>{
+  if(e.key==='Enter') verifyOTP();
+});
 </script>
 </body>
 </html>
