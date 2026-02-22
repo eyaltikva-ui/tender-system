@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
-  import { getFirestore, doc, getDoc, updateDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDm27uYjwTMr4BnpGQzux7eS6bEJoNn_dM",
@@ -29,6 +29,8 @@
 
   let formData = null;
   let pendingDecision = null;
+  let currentOTP = null;
+  let otpExpiry = null;
 
   async function init() {
     if (!formId) { showError('קישור לא תקין'); return; }
@@ -104,15 +106,9 @@
     // שמור את ההחלטה הממתינה
     pendingDecision = decision;
 
-    // צור OTP ושמור ב-Firebase
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 דקות
-
-    await setDoc(doc(db, 'otps', formId + '_' + signerIdx), {
-      otp,
-      expiry: otpExpiry,
-      createdAt: serverTimestamp(),
-    });
+    // צור OTP ושמור ב-memory
+    currentOTP = String(Math.floor(100000 + Math.random() * 900000));
+    otpExpiry = Date.now() + 10 * 60 * 1000; // 10 דקות
 
     // שלח OTP במייל
     const signerEmail = formData.signers[signerIdx].email;
@@ -124,7 +120,7 @@
         action: 'sendOTPEmail',
         signerEmail,
         signerRole,
-        otp,
+        otp: currentOTP,
         deptName: formData.deptName,
       })
     });
@@ -144,17 +140,15 @@
     btn.textContent = 'מאמת...';
 
     try {
-      const otpSnap = await getDoc(doc(db, 'otps', formId + '_' + signerIdx));
-      if (!otpSnap.exists()) { btn.disabled=false; btn.textContent='אמת קוד'; alert('קוד לא נמצא, נסה שוב'); return; }
-      const otpData = otpSnap.data();
-      if (Date.now() > otpData.expiry) { btn.disabled=false; btn.textContent='אמת קוד'; alert('הקוד פג תוקף. חזור והתחל מחדש.'); return; }
-      if (entered !== otpData.otp) {
-        btn.disabled=false; btn.textContent='אמת קוד';
-        document.getElementById('otpError').style.display='block';
-        return;
-      }
-      // OTP נכון — בצע את ההחלטה
-      await completeDecision(pendingDecision);
+    if (!currentOTP) { btn.disabled=false; btn.textContent='אמת קוד'; alert('קוד לא נמצא, נסה שוב'); return; }
+    if (Date.now() > otpExpiry) { btn.disabled=false; btn.textContent='אמת קוד'; alert('הקוד פג תוקף. חזור והתחל מחדש.'); return; }
+    if (entered !== currentOTP) {
+      btn.disabled=false; btn.textContent='אמת קוד';
+      document.getElementById('otpError').style.display='block';
+      return;
+    }
+    // OTP נכון — בצע את ההחלטה
+    await completeDecision(pendingDecision);
     } catch(e) {
       btn.disabled=false; btn.textContent='אמת קוד';
       alert('שגיאה: ' + e.message);
