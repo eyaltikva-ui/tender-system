@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>דשבורד מנהל – טפסי מכרז</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+import { getFirestore, collection, getDocs, doc, getDoc, orderBy, query } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDm27uYjwTMr4BnpGQzux7eS6bEJoNn_dM",
+  authDomain: "rg-tender-approvals.firebaseapp.com",
+  projectId: "rg-tender-approvals",
+  storageBucket: "rg-tender-approvals.firebasestorage.app",
+  messagingSenderId: "309967399008",
+  appId: "1:309967399008:web:c8879c0d97f0fe63e33b05"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let allTenders = [];
+
+async function loadTenders() {
+  document.getElementById('loadingMsg').style.display = 'block';
+  try {
+    const q = query(collection(db, "tenders"), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    allTenders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderStats();
+    renderTable(allTenders);
+  } catch(e) {
+    document.getElementById('loadingMsg').textContent = 'שגיאה בטעינה: ' + e.message;
+  }
+}
+
+function renderStats() {
+  const total = allTenders.length;
+  const completed = allTenders.filter(t=>t.status==='completed').length;
+  const inProgress = allTenders.filter(t=>t.status==='in_progress').length;
+  const rejected = allTenders.filter(t=>t.status==='rejected').length;
+  const returned = allTenders.filter(t=>t.status==='returned_to_submitter').length;
+  document.getElementById('stats').innerHTML = `<div class="stat-card"><div class="stat-num">${total}</div><div class="stat-label">סה"כ טפסים</div></div><div class="stat-card green"><div class="stat-num">${completed}</div><div class="stat-label">הותלמם</div></div><div class="stat-card blue"><div class="stat-num">${inProgress}</div><div class="stat-label">בטיפוי</div></div><div class="stat-card orange"><div class="stat-num">${returned}</div><div class="stat-label">הוחזרו לתיקון</div></div><div class="stat-card red"><div class="stat-num">${rejected}</div><div class="stat-label">נדחו</div></div>`;
+}
