@@ -23,16 +23,14 @@
 
   const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzADSQjmSErfbHTgZP8uK48dg_t1LPapRC7Wxx5nglSP2vW5DX1trDnOjMyHcO_78m1RQ/exec";
 
-  // ===== שרשרות חתימה =====
-  // PILOT: כל המיילים ל-eyal-t@ramat-gan.muni.il
-  // בסיום פיילוט – החלף בכתובות האמיתיות
+  // PILOT: כל המיילים לאיל
   const PILOT_EMAIL = "eyal-t@ramat-gan.muni.il";
 
   const SIGNER_CHAINS = {
     'רגיל': [
-      { role: 'מנהלת תקציב רגיל', email: PILOT_EMAIL },
-      { role: 'גזברית העירייה',    email: PILOT_EMAIL },
-      { role: 'מנכ"ל העירייה',    email: PILOT_EMAIL },
+      { role: 'מנהלת תקציב רגיל',  email: PILOT_EMAIL },
+      { role: 'גזברית העירייה',     email: PILOT_EMAIL },
+      { role: 'מנכ"ל העירייה',     email: PILOT_EMAIL },
     ],
     'תבר': [
       { role: 'מנהלת תקציב בלתי רגיל', email: PILOT_EMAIL },
@@ -42,6 +40,15 @@
   };
 
   window.submitTenderForm = async function() {
+    const sigCanvas = document.getElementById('sigCanvas');
+    const sigData = sigCanvas.toDataURL();
+    const isEmpty = isCanvasEmpty(sigCanvas);
+    if (isEmpty) {
+      alert('נדרשת חתימה לפני השליחה');
+      sigCanvas.style.borderColor = '#e53e3e';
+      return;
+    }
+
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
     btn.textContent = 'שולח...';
@@ -49,27 +56,37 @@
     const budgetSource = document.querySelector('input[name="budgetSource"]:checked')?.value || 'רגיל';
     const chain = SIGNER_CHAINS[budgetSource] || SIGNER_CHAINS['רגיל'];
 
-    const signers = chain.map(s => ({ ...s, idNum: '', status: 'pending' }));
+    const signers = chain.map(s => ({
+      role: s.role,
+      email: s.email,
+      status: 'pending',
+      name: '',
+      idNum: '',
+      signature: '',
+      signedAt: null,
+    }));
 
     const formData = {
-      deptName:         document.getElementById('deptName').value,
-      submitterName:    document.getElementById('submitterName').value,
-      submitterRole:    document.getElementById('submitterRole').value,
-      phone:            document.getElementById('phone').value,
-      submitDate:       document.getElementById('submitDate').value,
-      serviceTypes:     Array.from(document.querySelectorAll('input[name="serviceType"]:checked')).map(x => x.value),
-      serviceDesc:      document.getElementById('serviceDesc').value,
-      procurementNeed:  document.getElementById('procurementNeed').value,
-      specialReqs:      document.querySelector('input[name="specialReqs"]:checked')?.value,
-      specialReqsText:  document.getElementById('specialReqsText').value,
-      startDate:        document.getElementById('startDate').value,
-      totalAmount:      document.getElementById('totalAmount').value,
-      multiYear:        document.querySelector('input[name="multiYear"]:checked')?.value,
-      numYears:         document.getElementById('numYears').value,
+      deptName:        document.getElementById('deptName').value,
+      submitterName:   document.getElementById('submitterName').value,
+      submitterRole:   document.getElementById('submitterRole').value,
+      submitterId:     document.getElementById('submitterId').value,
+      submitterSig:    sigData,
+      phone:           document.getElementById('phone').value,
+      submitDate:      document.getElementById('submitDate').value,
+      serviceTypes:    Array.from(document.querySelectorAll('input[name="serviceType"]:checked')).map(x=>x.value),
+      serviceDesc:     document.getElementById('serviceDesc').value,
+      procurementNeed: document.getElementById('procurementNeed').value,
+      specialReqs:     document.querySelector('input[name="specialReqs"]:checked')?.value,
+      specialReqsText: document.getElementById('specialReqsText').value,
+      startDate:       document.getElementById('startDate').value,
+      totalAmount:     document.getElementById('totalAmount').value,
+      multiYear:       document.querySelector('input[name="multiYear"]:checked')?.value,
+      numYears:        document.getElementById('numYears').value,
       budgetSource,
-      tavarNum:         document.getElementById('tavarNum').value,
-      budgetNum:        document.getElementById('budgetNum').value,
-      budgetCalc:       document.getElementById('budgetCalc').value,
+      tavarNum:        document.getElementById('tavarNum').value,
+      budgetNum:       document.getElementById('budgetNum').value,
+      budgetCalc:      document.getElementById('budgetCalc').value,
       signers,
       currentSignerIndex: 0,
       status: 'in_progress',
@@ -94,105 +111,107 @@
         })
       });
 
-      showSuccess(formId, signers[0].role);
+      document.getElementById('mainForm').style.display = 'none';
+      document.getElementById('successDiv').style.display = 'block';
+      document.getElementById('formIdDisplay').textContent = formId;
+      document.getElementById('firstSignerRoleDisplay').textContent = signers[0].role;
     } catch (err) {
       console.error(err);
       btn.disabled = false;
       btn.textContent = '📤 שלח לאישור';
-      alert('שגיאה בשמירה: ' + err.message);
+      alert('שגיאה: ' + err.message);
     }
   };
 
-  function showSuccess(formId, firstSignerRole) {
-    document.getElementById('mainForm').style.display = 'none';
-    const s = document.getElementById('successDiv');
-    s.style.display = 'block';
-    document.getElementById('formIdDisplay').textContent = formId;
-    document.getElementById('firstSignerRoleDisplay').textContent = firstSignerRole;
+  function isCanvasEmpty(canvas) {
+    const ctx = canvas.getContext('2d');
+    const data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    for (let i=3; i<data.length; i+=4) { if (data[i] > 0) return false; }
+    return true;
   }
 </script>
 <style>
 :root {
-  --blue: #1a4b8c; --blue-mid: #2563b0; --blue-light: #e8f0fb;
-  --accent: #c8a84b; --text: #1c2333; --muted: #5a6478;
-  --border: #cdd5e0; --bg: #f4f6fa; --success: #2d7a4f;
+  --blue:#1a4b8c; --blue-mid:#2563b0; --blue-light:#e8f0fb;
+  --accent:#c8a84b; --text:#1c2333; --muted:#5a6478;
+  --border:#cdd5e0; --bg:#f4f6fa; --success:#2d7a4f;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--text); padding: 0 0 4rem; }
-.header { background: linear-gradient(135deg, var(--blue), var(--blue-mid)); color: white; padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 20px rgba(26,75,140,0.3); }
-.header-logo { display: flex; align-items: center; gap: 1rem; }
-.header-logo img { height: 50px; width: auto; }
-.header-title h1 { font-size: 1.3rem; font-weight: 700; }
-.header-title p { font-size: 0.8rem; opacity: 0.75; margin-top: 2px; }
-.progress-bar { height: 4px; background: rgba(255,255,255,0.2); }
-.progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s; }
-.container { max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; }
-.steps-nav { display: flex; gap: 0.5rem; margin-bottom: 2rem; background: white; border-radius: 12px; padding: 0.75rem; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
-.step-btn { flex: 1; padding: 0.5rem; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 0.72rem; font-weight: 500; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; transition: all 0.2s; }
-.step-btn .step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; }
-.step-btn.active { color: var(--blue); background: var(--blue-light); }
-.step-btn.active .step-num { background: var(--blue); color: white; }
-.step-btn.completed { color: var(--success); }
-.step-btn.completed .step-num { background: var(--success); color: white; }
-.section-card { background: white; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); overflow: hidden; animation: fadeSlide 0.3s ease; }
-@keyframes fadeSlide { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-.section-header { background: linear-gradient(135deg, var(--blue), var(--blue-mid)); padding: 1.2rem 1.75rem; display: flex; align-items: center; gap: 0.75rem; }
-.section-icon { width: 34px; height: 34px; background: rgba(255,255,255,0.15); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
-.section-header h2 { color: white; font-size: 1rem; font-weight: 600; }
-.section-body { padding: 1.75rem; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
-.span-2 { grid-column: span 2; }
-.field { display: flex; flex-direction: column; gap: 0.3rem; }
-.field label { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
-.field label .required { color: #e53e3e; }
-.field input, .field textarea, .field select { font-family: inherit; font-size: 0.9rem; border: 1.5px solid var(--border); border-radius: 8px; padding: 0.6rem 0.85rem; color: var(--text); background: var(--bg); outline: none; transition: all 0.2s; }
-.field input:focus, .field textarea:focus { border-color: var(--blue-mid); background: white; box-shadow: 0 0 0 3px rgba(37,99,176,0.1); }
-.field textarea { resize: vertical; min-height: 90px; }
-.checkbox-group { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.25rem; }
-.checkbox-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.86rem; font-weight: 500; padding: 0.4rem 0.8rem; border: 1.5px solid var(--border); border-radius: 8px; background: var(--bg); transition: all 0.18s; user-select: none; }
-.checkbox-item:has(input:checked) { border-color: var(--blue); background: var(--blue-light); color: var(--blue); }
-.checkbox-item input { width: 15px; height: 15px; accent-color: var(--blue); cursor: pointer; }
-.radio-group { display: flex; gap: 0.7rem; flex-wrap: wrap; }
-.radio-item { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.86rem; padding: 0.4rem 1rem; border: 1.5px solid var(--border); border-radius: 8px; background: var(--bg); transition: all 0.18s; user-select: none; }
-.radio-item:has(input:checked) { border-color: var(--blue); background: var(--blue-light); color: var(--blue); font-weight: 500; }
-.radio-item input { accent-color: var(--blue); }
-.amount-wrap { position: relative; }
-.amount-wrap input { padding-left: 2.5rem; }
-.amount-symbol { position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); font-size: 0.9rem; color: var(--muted); font-weight: 600; pointer-events: none; }
-.info-box { background: #fffbea; border: 1px solid #f0d060; border-radius: 8px; padding: 0.7rem 1rem; font-size: 0.8rem; color: #7a5a00; display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-.divider { height: 1px; background: var(--bg); margin: 1.4rem 0; }
-.budget-sources { display: flex; gap: 1rem; flex-wrap: wrap; }
-.budget-source-card { flex: 1; min-width: 180px; border: 1.5px solid var(--border); border-radius: 10px; padding: 1rem; background: var(--bg); cursor: pointer; transition: all 0.18s; }
-.budget-source-card:has(input:checked) { border-color: var(--blue); background: var(--blue-light); }
-.budget-source-card > label { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer; margin-bottom: 0.5rem; }
-.chain-preview { margin-top: 1rem; padding: 1rem 1.25rem; background: var(--blue-light); border: 1.5px solid #b8d0f0; border-radius: 10px; font-size: 0.84rem; display: none; }
-.chain-preview.visible { display: block; }
-.chain-preview .chain-title { font-weight: 700; color: var(--blue); margin-bottom: 0.5rem; }
-.chain-steps { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-.chain-step { background: var(--blue); color: white; padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.78rem; font-weight: 600; }
-.chain-arrow { color: var(--blue); font-weight: 700; }
-.nav-buttons { display: flex; justify-content: space-between; margin-top: 1.75rem; }
-.btn { font-family: inherit; font-size: 0.9rem; font-weight: 600; padding: 0.7rem 1.75rem; border-radius: 10px; border: none; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 0.5rem; }
-.btn-primary { background: var(--blue); color: white; box-shadow: 0 4px 12px rgba(26,75,140,0.3); }
-.btn-primary:hover { background: var(--blue-mid); transform: translateY(-1px); }
-.btn-secondary { background: white; color: var(--blue); border: 1.5px solid var(--blue); }
-.btn-secondary:hover { background: var(--blue-light); }
-.btn-success { background: linear-gradient(135deg, var(--success), #1a5e3a); color: white; font-size: 1rem; padding: 0.8rem 2.5rem; }
-.step-page { display: none; }
-.step-page.active { display: block; }
-.hidden { display: none !important; }
-.success-screen { text-align: center; padding: 3rem 2rem; background: white; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,0.07); }
-.checkmark { width: 80px; height: 80px; background: linear-gradient(135deg, var(--success), #1a5e3a); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 1.5rem; animation: popIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275); }
-@keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.success-screen h2 { font-size: 1.5rem; color: var(--success); margin-bottom: 0.5rem; }
-.form-id-box { display: inline-block; margin-top: 1rem; background: var(--blue-light); color: var(--blue); font-weight: 700; font-size: 0.85rem; padding: 0.5rem 1.25rem; border-radius: 8px; letter-spacing: 0.03em; direction: ltr; }
-@media (max-width: 600px) {
-  .form-grid { grid-template-columns: 1fr; }
-  .span-2 { grid-column: span 1; }
-  .steps-nav { gap: 0.2rem; }
-  .step-btn { font-size: 0.62rem; }
-  .header { padding: 1rem; }
-}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Rubik',sans-serif;background:var(--bg);color:var(--text);padding:0 0 4rem;}
+.header{background:linear-gradient(135deg,var(--blue),var(--blue-mid));color:white;padding:1.5rem 2rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 4px 20px rgba(26,75,140,0.3);}
+.header-logo{display:flex;align-items:center;gap:1rem;}
+.header-logo img{height:50px;width:auto;}
+.header-title h1{font-size:1.3rem;font-weight:700;}
+.header-title p{font-size:0.8rem;opacity:0.75;margin-top:2px;}
+.progress-bar{height:4px;background:rgba(255,255,255,0.2);}
+.progress-fill{height:100%;background:var(--accent);width:0%;transition:width 0.4s;}
+.container{max-width:860px;margin:2rem auto;padding:0 1.5rem;}
+.steps-nav{display:flex;gap:0.5rem;margin-bottom:2rem;background:white;border-radius:12px;padding:0.75rem;box-shadow:0 2px 12px rgba(0,0,0,0.07);}
+.step-btn{flex:1;padding:0.5rem;border:none;background:transparent;border-radius:8px;cursor:pointer;font-family:inherit;font-size:0.72rem;font-weight:500;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;transition:all 0.2s;}
+.step-btn .step-num{width:22px;height:22px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;}
+.step-btn.active{color:var(--blue);background:var(--blue-light);}
+.step-btn.active .step-num{background:var(--blue);color:white;}
+.step-btn.completed{color:var(--success);}
+.step-btn.completed .step-num{background:var(--success);color:white;}
+.section-card{background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.07);overflow:hidden;animation:fadeSlide 0.3s ease;}
+@keyframes fadeSlide{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.section-header{background:linear-gradient(135deg,var(--blue),var(--blue-mid));padding:1.2rem 1.75rem;display:flex;align-items:center;gap:0.75rem;}
+.section-icon{width:34px;height:34px;background:rgba(255,255,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}
+.section-header h2{color:white;font-size:1rem;font-weight:600;}
+.section-body{padding:1.75rem;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;}
+.span-2{grid-column:span 2;}
+.field{display:flex;flex-direction:column;gap:0.3rem;}
+.field label{font-size:0.82rem;font-weight:600;color:var(--muted);}
+.field label .required{color:#e53e3e;}
+.field input,.field textarea{font-family:inherit;font-size:0.9rem;border:1.5px solid var(--border);border-radius:8px;padding:0.6rem 0.85rem;color:var(--text);background:var(--bg);outline:none;transition:all 0.2s;}
+.field input:focus,.field textarea:focus{border-color:var(--blue-mid);background:white;box-shadow:0 0 0 3px rgba(37,99,176,0.1);}
+.field textarea{resize:vertical;min-height:90px;}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:0.7rem;margin-top:0.25rem;}
+.checkbox-item{display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.86rem;font-weight:500;padding:0.4rem 0.8rem;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);transition:all 0.18s;user-select:none;}
+.checkbox-item:has(input:checked){border-color:var(--blue);background:var(--blue-light);color:var(--blue);}
+.checkbox-item input{width:15px;height:15px;accent-color:var(--blue);cursor:pointer;}
+.radio-group{display:flex;gap:0.7rem;flex-wrap:wrap;}
+.radio-item{display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.86rem;padding:0.4rem 1rem;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);transition:all 0.18s;user-select:none;}
+.radio-item:has(input:checked){border-color:var(--blue);background:var(--blue-light);color:var(--blue);font-weight:500;}
+.radio-item input{accent-color:var(--blue);}
+.amount-wrap{position:relative;}
+.amount-wrap input{padding-left:2.5rem;}
+.amount-symbol{position:absolute;left:0.85rem;top:50%;transform:translateY(-50%);font-size:0.9rem;color:var(--muted);font-weight:600;pointer-events:none;}
+.info-box{background:#fffbea;border:1px solid #f0d060;border-radius:8px;padding:0.7rem 1rem;font-size:0.8rem;color:#7a5a00;display:flex;gap:0.5rem;margin-top:0.5rem;}
+.divider{height:1px;background:var(--bg);margin:1.4rem 0;}
+.budget-sources{display:flex;gap:1rem;flex-wrap:wrap;}
+.budget-source-card{flex:1;min-width:180px;border:1.5px solid var(--border);border-radius:10px;padding:1rem;background:var(--bg);cursor:pointer;transition:all 0.18s;}
+.budget-source-card:has(input:checked){border-color:var(--blue);background:var(--blue-light);}
+.budget-source-card>label{display:flex;align-items:center;gap:0.5rem;font-weight:600;cursor:pointer;margin-bottom:0.5rem;}
+.chain-preview{margin-top:1rem;padding:1rem 1.25rem;background:var(--blue-light);border:1.5px solid #b8d0f0;border-radius:10px;font-size:0.84rem;display:none;}
+.chain-preview.visible{display:block;}
+.chain-preview .chain-title{font-weight:700;color:var(--blue);margin-bottom:0.5rem;}
+.chain-steps{display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;}
+.chain-step{background:var(--blue);color:white;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600;}
+.chain-arrow{color:var(--blue);font-weight:700;}
+/* חתימה */
+.sig-box{border:1.5px solid var(--border);border-radius:10px;overflow:hidden;background:white;margin-top:0.5rem;}
+.sig-toolbar{display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0.75rem;background:var(--bg);border-bottom:1px solid var(--border);font-size:0.78rem;color:var(--muted);}
+.sig-clear-btn{font-family:inherit;font-size:0.75rem;border:1px solid var(--border);background:white;color:var(--muted);padding:0.2rem 0.6rem;border-radius:6px;cursor:pointer;}
+.sig-clear-btn:hover{background:var(--bg);}
+canvas#sigCanvas{display:block;width:100%;height:140px;cursor:crosshair;touch-action:none;}
+.nav-buttons{display:flex;justify-content:space-between;margin-top:1.75rem;}
+.btn{font-family:inherit;font-size:0.9rem;font-weight:600;padding:0.7rem 1.75rem;border-radius:10px;border:none;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.5rem;}
+.btn-primary{background:var(--blue);color:white;box-shadow:0 4px 12px rgba(26,75,140,0.3);}
+.btn-primary:hover{background:var(--blue-mid);transform:translateY(-1px);}
+.btn-secondary{background:white;color:var(--blue);border:1.5px solid var(--blue);}
+.btn-secondary:hover{background:var(--blue-light);}
+.btn-success{background:linear-gradient(135deg,var(--success),#1a5e3a);color:white;font-size:1rem;padding:0.8rem 2.5rem;}
+.step-page{display:none;}
+.step-page.active{display:block;}
+.hidden{display:none!important;}
+.success-screen{text-align:center;padding:3rem 2rem;background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.07);}
+.checkmark{width:80px;height:80px;background:linear-gradient(135deg,var(--success),#1a5e3a);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;margin:0 auto 1.5rem;animation:popIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275);}
+@keyframes popIn{from{transform:scale(0);opacity:0;}to{transform:scale(1);opacity:1;}}
+.success-screen h2{font-size:1.5rem;color:var(--success);margin-bottom:0.5rem;}
+.form-id-box{display:inline-block;margin-top:1rem;background:var(--blue-light);color:var(--blue);font-weight:700;font-size:0.85rem;padding:0.5rem 1.25rem;border-radius:8px;letter-spacing:0.03em;direction:ltr;}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr;}.span-2{grid-column:span 1;}.steps-nav{gap:0.2rem;}.step-btn{font-size:0.62rem;}.header{padding:1rem;}}
 </style>
 </head>
 <body>
@@ -205,16 +224,16 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
       <p>עיריית רמת גן – אגף הכספים</p>
     </div>
   </div>
-  <div id="headerDate" style="font-size:0.85rem; opacity:0.85;"></div>
+  <div id="headerDate" style="font-size:0.85rem;opacity:0.85;"></div>
 </header>
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
 <div class="container">
-  <div class="steps-nav" id="stepsNav">
+  <div class="steps-nav">
     <button class="step-btn active" onclick="goToStep(1)" id="stepBtn1"><span class="step-num">1</span>פרטי מגיש</button>
     <button class="step-btn" onclick="goToStep(2)" id="stepBtn2"><span class="step-num">2</span>תיאור</button>
     <button class="step-btn" onclick="goToStep(3)" id="stepBtn3"><span class="step-num">3</span>תקציב</button>
-    <button class="step-btn" onclick="goToStep(4)" id="stepBtn4"><span class="step-num">4</span>סיכום</button>
+    <button class="step-btn" onclick="goToStep(4)" id="stepBtn4"><span class="step-num">4</span>חתימה ושליחה</button>
   </div>
 
   <div id="mainForm">
@@ -228,6 +247,7 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
           <div class="field"><label>שם האגף <span class="required">*</span></label><input type="text" id="deptName" /></div>
           <div class="field"><label>שם מגיש הבקשה <span class="required">*</span></label><input type="text" id="submitterName" /></div>
           <div class="field"><label>תפקיד <span class="required">*</span></label><input type="text" id="submitterRole" /></div>
+          <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="submitterId" dir="ltr" maxlength="9" /></div>
           <div class="field"><label>טלפון נייד <span class="required">*</span></label><input type="tel" id="phone" dir="ltr" /></div>
           <div class="field"><label>תאריך הגשה</label><input type="date" id="submitDate" dir="ltr" /></div>
         </div>
@@ -262,7 +282,7 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
           </div>
         </div>
         <div class="field hidden" id="specialReqsField" style="margin-top:0.5rem"><label>פירוט</label><textarea id="specialReqsText" rows="2"></textarea></div>
-        <div class="field" style="margin-top:1rem; max-width:260px"><label>תאריך תחילת ההתקשרות <span class="required">*</span></label><input type="date" id="startDate" dir="ltr" /></div>
+        <div class="field" style="margin-top:1rem;max-width:260px"><label>תאריך תחילת ההתקשרות <span class="required">*</span></label><input type="date" id="startDate" dir="ltr" /></div>
         <div class="nav-buttons"><button class="btn btn-secondary" onclick="prevStep(2)">← חזור</button><button class="btn btn-primary" onclick="nextStep(2)">המשך ←</button></div>
       </div>
     </div>
@@ -286,7 +306,7 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
             <label class="radio-item"><input type="radio" name="multiYear" value="כן" onchange="document.getElementById('numYearsField').classList.remove('hidden')" /><span>כן</span></label>
           </div>
         </div>
-        <div class="field hidden" id="numYearsField" style="max-width:180px; margin-top:0.5rem"><label>מספר שנים</label><input type="number" id="numYears" min="2" max="10" dir="ltr" /></div>
+        <div class="field hidden" id="numYearsField" style="max-width:180px;margin-top:0.5rem"><label>מספר שנים</label><input type="number" id="numYears" min="2" max="10" dir="ltr" /></div>
         <div class="divider"></div>
         <div class="field">
           <label>מקור תקציבי <span class="required">*</span></label>
@@ -300,7 +320,6 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
               <div class="field"><label>מס' תקציב</label><input type="text" id="budgetNum" /></div>
             </div>
           </div>
-          <!-- תצוגת שרשרת חתימה אוטומטית -->
           <div class="chain-preview" id="chainPreview">
             <div class="chain-title">🔗 שרשרת האישורים שתנוהל אוטומטית:</div>
             <div class="chain-steps" id="chainSteps"></div>
@@ -313,11 +332,28 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
     </div>
   </div>
 
-  <!-- STEP 4: סיכום -->
+  <!-- STEP 4: חתימה ושליחה -->
   <div class="step-page" id="step4">
     <div class="section-card">
-      <div class="section-header"><div class="section-icon">📄</div><h2>סיכום ושליחה</h2></div>
-      <div class="section-body" id="summaryBody"></div>
+      <div class="section-header"><div class="section-icon">✍️</div><h2>חתימת מגיש הבקשה</h2></div>
+      <div class="section-body">
+        <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1.25rem;">חתום בתיבה למטה באמצעות העכבר או האצבע. לאחר השליחה הטופס יועבר לאישור בשרשרת.</p>
+        <div class="field">
+          <label>חתימה <span class="required">*</span></label>
+          <div class="sig-box">
+            <div class="sig-toolbar">
+              <span>חתום כאן</span>
+              <button class="sig-clear-btn" onclick="clearSig()">נקה</button>
+            </div>
+            <canvas id="sigCanvas" width="800" height="140"></canvas>
+          </div>
+        </div>
+        <div id="summaryPreview" style="margin-top:1.5rem;"></div>
+        <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="prevStep(4)">← חזור</button>
+          <button class="btn btn-success" id="submitBtn" onclick="submitTenderForm()">📤 שלח לאישור</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -327,10 +363,10 @@ body { font-family: 'Rubik', sans-serif; background: var(--bg); color: var(--tex
   <div class="success-screen" id="successDiv" style="display:none">
     <div class="checkmark">✓</div>
     <h2>הטופס נשלח בהצלחה!</h2>
-    <p>מייל נשלח ל<strong id="firstSignerRoleDisplay"></strong> לאישור ראשון.</p>
-    <p style="margin-top:0.5rem; font-size:0.85rem; color:var(--muted);">מספר הטופס לעקיבה:</p>
+    <p>מייל נשלח ל<strong id="firstSignerRoleDisplay"></strong> לאישור.</p>
+    <p style="margin-top:0.5rem;font-size:0.85rem;color:var(--muted);">מספר הטופס לעקיבה:</p>
     <div class="form-id-box" id="formIdDisplay"></div>
-    <button class="btn btn-secondary" style="margin:1.5rem auto 0; display:flex;" onclick="location.reload()">+ טופס חדש</button>
+    <button class="btn btn-secondary" style="margin:1.5rem auto 0;display:flex;" onclick="location.reload()">+ טופס חדש</button>
   </div>
 </div>
 
@@ -340,11 +376,11 @@ const totalSteps = 4;
 
 const today = new Date();
 document.getElementById('submitDate').value = today.toISOString().split('T')[0];
-document.getElementById('headerDate').textContent = today.toLocaleDateString('he-IL', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+document.getElementById('headerDate').textContent = today.toLocaleDateString('he-IL',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
 
 const CHAINS_DISPLAY = {
-  'רגיל': ['מנהלת תקציב רגיל', 'גזברית העירייה', 'מנכ"ל העירייה'],
-  'תבר':  ['מנהלת תקציב בלתי רגיל', 'גזברית העירייה', 'מנכ"ל העירייה'],
+  'רגיל': ['מנהלת תקציב רגיל','גזברית העירייה','מנכ"ל העירייה'],
+  'תבר':  ['מנהלת תקציב בלתי רגיל','גזברית העירייה','מנכ"ל העירייה'],
 };
 
 function updateChainPreview() {
@@ -353,14 +389,12 @@ function updateChainPreview() {
   const stepsEl = document.getElementById('chainSteps');
   if (!src) { preview.classList.remove('visible'); return; }
   const chain = CHAINS_DISPLAY[src] || [];
-  stepsEl.innerHTML = chain.map((r,i) =>
-    (i>0?'<span class="chain-arrow">←</span>':'') + `<span class="chain-step">${r}</span>`
-  ).join('');
+  stepsEl.innerHTML = chain.map((r,i)=>(i>0?'<span class="chain-arrow">←</span>':'')+`<span class="chain-step">${r}</span>`).join('');
   preview.classList.add('visible');
 }
 
 function updateProgress() {
-  document.getElementById('progressFill').style.width = ((currentStep-1)/(totalSteps-1)*100) + '%';
+  document.getElementById('progressFill').style.width = ((currentStep-1)/(totalSteps-1)*100)+'%';
 }
 function goToStep(step) {
   document.getElementById('step'+currentStep).classList.remove('active');
@@ -373,15 +407,15 @@ function goToStep(step) {
   nb.classList.add('active'); nb.classList.remove('completed');
   nb.querySelector('.step-num').textContent = currentStep;
   updateProgress();
-  window.scrollTo({top:0, behavior:'smooth'});
-  if (step===4) buildSummary();
+  window.scrollTo({top:0,behavior:'smooth'});
+  if (step===4) buildSummaryPreview();
 }
 function nextStep(f) { if (validateStep(f)) goToStep(f+1); }
 function prevStep(f) { goToStep(f-1); }
 
 function validateStep(step) {
   const req = {
-    1:['deptName','submitterName','submitterRole','phone'],
+    1:['deptName','submitterName','submitterRole','submitterId','phone'],
     2:['serviceDesc','procurementNeed','startDate'],
     3:['totalAmount','budgetCalc'],
     4:[]
@@ -396,50 +430,59 @@ function validateStep(step) {
     }
   });
   if (step===2 && !document.querySelectorAll('input[name="serviceType"]:checked').length) { valid=false; }
-  if (step===3 && !document.querySelector('input[name="budgetSource"]:checked')) {
-    alert('יש לבחור מקור תקציבי'); valid=false;
-  }
+  if (step===3 && !document.querySelector('input[name="budgetSource"]:checked')) { alert('יש לבחור מקור תקציבי'); valid=false; }
   if (!valid) { const f=document.querySelector('[style*="e53e3e"]'); if(f) f.scrollIntoView({behavior:'smooth',block:'center'}); }
   return valid;
 }
 
-function buildSummary() {
-  const types = Array.from(document.querySelectorAll('input[name="serviceType"]:checked')).map(x=>x.value).join(', ');
+function buildSummaryPreview() {
   const bs = document.querySelector('input[name="budgetSource"]:checked')?.value;
-  const bsLabel = bs==='תבר' ? 'תב"ר' : bs==='רגיל' ? 'תקציב רגיל' : '';
   const chain = CHAINS_DISPLAY[bs] || [];
-
-  const rows = [
-    ['אגף', document.getElementById('deptName').value],
-    ['מגיש', document.getElementById('submitterName').value + ' – ' + document.getElementById('submitterRole').value],
-    ['טלפון', document.getElementById('phone').value],
-    ['סוג שירות', types],
-    ['שירות', document.getElementById('serviceDesc').value.substring(0,120)],
-    ['סכום', '₪' + Number(document.getElementById('totalAmount').value||0).toLocaleString('he-IL')],
-    ['מקור תקציבי', bsLabel],
-    ['תחשיב', document.getElementById('budgetCalc').value.substring(0,100)],
-  ];
-
-  let html = '<table style="width:100%; border-collapse:collapse; font-size:0.88rem;">';
-  rows.forEach(([k,v]) => {
-    html += `<tr style="border-bottom:1px solid #eee"><td style="padding:0.6rem 0.5rem; font-weight:600; color:#5a6478; width:35%; white-space:nowrap">${k}</td><td style="padding:0.6rem 0.5rem">${v||'—'}</td></tr>`;
-  });
-  html += '</table>';
-
-  // שרשרת אישורים
-  html += `<div style="margin-top:1.25rem; padding:1rem; background:var(--blue-light); border-radius:10px;">
-    <div style="font-weight:700; color:var(--blue); margin-bottom:0.6rem;">🔗 שרשרת האישורים:</div>
-    <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+  const html = `<div style="background:var(--blue-light);border-radius:10px;padding:1rem 1.25rem;font-size:0.84rem;">
+    <div style="font-weight:700;color:var(--blue);margin-bottom:0.5rem;">🔗 שרשרת האישורים לאחר שליחה:</div>
+    <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
       ${chain.map((r,i)=>(i>0?'<span style="color:var(--blue);font-weight:700">←</span>':'')+`<span style="background:var(--blue);color:white;padding:0.3rem 0.75rem;border-radius:20px;font-size:0.78rem;font-weight:600">${r}</span>`).join('')}
     </div>
+    <p style="margin-top:0.75rem;color:var(--muted);font-size:0.8rem;">כל גורם יקבל מייל עם קישור, יראה את הטופס, יחתום ויאשר.</p>
   </div>`;
+  document.getElementById('summaryPreview').innerHTML = html;
+}
 
-  html += `<div style="display:flex; justify-content:space-between; margin-top:1.75rem;">
-    <button class="btn btn-secondary" onclick="prevStep(4)">← חזור לעריכה</button>
-    <button class="btn btn-success" id="submitBtn" onclick="submitTenderForm()">📤 שלח לאישור</button>
-  </div>`;
+// ===== חתימה =====
+const canvas = document.getElementById('sigCanvas');
+const ctx = canvas.getContext('2d');
+ctx.strokeStyle = '#1a4b8c';
+ctx.lineWidth = 2.5;
+ctx.lineCap = 'round';
+ctx.lineJoin = 'round';
+let drawing = false, lastX = 0, lastY = 0;
 
-  document.getElementById('summaryBody').innerHTML = html;
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / r.width;
+  const scaleY = canvas.height / r.height;
+  if (e.touches) {
+    return [(e.touches[0].clientX - r.left)*scaleX, (e.touches[0].clientY - r.top)*scaleY];
+  }
+  return [(e.clientX - r.left)*scaleX, (e.clientY - r.top)*scaleY];
+}
+
+canvas.addEventListener('mousedown', e => { drawing=true; [lastX,lastY]=getPos(e); });
+canvas.addEventListener('mousemove', e => {
+  if (!drawing) return;
+  const [x,y] = getPos(e);
+  ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+  [lastX,lastY] = [x,y];
+});
+canvas.addEventListener('mouseup', ()=>drawing=false);
+canvas.addEventListener('mouseleave', ()=>drawing=false);
+canvas.addEventListener('touchstart', e=>{ e.preventDefault(); drawing=true; [lastX,lastY]=getPos(e); }, {passive:false});
+canvas.addEventListener('touchmove', e=>{ e.preventDefault(); if(!drawing)return; const [x,y]=getPos(e); ctx.beginPath();ctx.moveTo(lastX,lastY);ctx.lineTo(x,y);ctx.stroke();[lastX,lastY]=[x,y]; }, {passive:false});
+canvas.addEventListener('touchend', ()=>drawing=false);
+
+function clearSig() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  canvas.style.borderColor='';
 }
 
 updateProgress();
