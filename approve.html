@@ -142,23 +142,23 @@
 
     if (decision === 'approve' && isLast) {
       await fetch(APPS_SCRIPT_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', mode:'no-cors',
         body: JSON.stringify({ ...base, action:'sendCompletedEmail', allSignerEmails: updatedSigners.map(s=>s.email) })
       });
     } else if (decision === 'approve') {
       const next = updatedSigners[signerIdx+1];
       await fetch(APPS_SCRIPT_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', mode:'no-cors',
         body: JSON.stringify({ ...base, action:'sendApprovalEmail', signerIndex:signerIdx+1, signerEmail:next.email, signerRole:next.role })
       });
     } else if (decision === 'reject') {
       await fetch(APPS_SCRIPT_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', mode:'no-cors',
         body: JSON.stringify({ ...base, action:'sendRejectedEmail', signerEmail: formData.signers[0].email })
       });
     } else if (decision === 'return') {
       await fetch(APPS_SCRIPT_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', mode:'no-cors',
         body: JSON.stringify({ ...base, action:'sendReturnedEmail', signerEmail: formData.signers[0].email })
       });
     }
