@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>אישור טופס מכרזי – עיריית רמת גן</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDm27uYjwTMr4BnpGQzux7eS6bEJoNn_dM",
+  authDomain: "rg-tender-approvals.firebaseapp.com",
+  projectId: "rg-tender-approvals",
+  storageBucket: "rg-tender-approvals.firebasestorage.app",
+  messagingSenderId: "309967399008",
+  appId: "1:309967399008:web:c8879c0d97f0fe63e33b05"
+};
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwMhnEL7ETubwHC8KvF2eXD2FsPOyVBclzUNjrEL-HU6bJjQ-9AIfpg4WUFyXK5dHVwpg/exec";
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const params = new URLSearchParams(window.location.search);
+const formId = params.get('formId');
+const signerIndex = parseInt(params.get('idx') || '0');
+
+let formData = null;
+let signatureData = null;
+
+ami function loadForm() {
+  if (!formId) { showError('קישור	 לאשר תקין'); return; }
+  const docRef = doc(db, "tenders", formId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) { showError('טופס  ל ננםצא'); return; }
+  formData = snap.data();
+  const signer = formData.signers[signerIndex];
+  if (signer.status !== 'pending' && signer.status !== 'returned') {
+    showError('טופס 5����&ה� ז לעירק'); return;
+  }
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('verifyScreen').style.display = 'block';
+  document.getElementById('signerRoleDisplay').textContent = signer.role;
+}
