@@ -17,11 +17,12 @@ const firebaseConfig = {
   messagingSenderId: "309967399008",
   appId: "1:309967399008:web:c8879c0d97f0fe63e33b05"
 };
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwMhnEL7ETubwHC8KvF2eXD2FsPOyVBclzUNjrEL-HU6bJjQ-9AIfpg4WUFyXK5dHVwpg/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzADSQjmSErfbHTgZP8uK48dg_t1LPapRC7Wxx5nglSP2vW5DX1trDnOjMyHcO_78m1RQ/exec";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// Get params from URL
 const params = new URLSearchParams(window.location.search);
 const formId = params.get('formId');
 const signerIndex = parseInt(params.get('idx') || '0');
@@ -29,17 +30,393 @@ const signerIndex = parseInt(params.get('idx') || '0');
 let formData = null;
 let signatureData = null;
 
-ami function loadForm() {
-  if (!formId) { showError('קישור	 לאשר תקין'); return; }
-  const docRef = doc(db, "tenders", formId);
-  const snap = await getDoc(docRef);
-  if (!snap.exists()) { showError('טופס  ל ננםצא'); return; }
-  formData = snap.data();
-  const signer = formData.signers[signerIndex];
-  if (signer.status !== 'pending' && signer.status !== 'returned') {
-    showError('טופס 5����&ה� ז לעירק'); return;
-  }
-  document.getElementById('loadingScreen').style.display = 'none';
-  document.getElementById('verifyScreen').style.display = 'block';
-  document.getElementById('signerRoleDisplay').textContent = signer.role;
+async function loadForm() {
+  if (!formId) { showError('קישור לא תקין'); return; }
+  try {
+    const docRef = doc(db, "tenders", formId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) { showError('טופס לא נמצא'); return; }
+    formData = snap.data();
+
+    // Check if already signed
+    const signer = formData.signers[signerIndex];
+    if (signer.status !== 'pending' && signer.status !== 'returned') {
+      showError('טופס זה כבר טופל על ידך.');
+      return;
+    }
+
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('verifyScreen').style.display = 'block';
+    document.getElementById('signerRoleDisplay').textContent = signer.role;
+
+  } catch(e) { showError('שגיאה בטעינה: ' + e.message); }
 }
+
+window.verifyId = function() {
+  const entered = document.getElementById('idInput').value.trim();
+  const expected = formData.signers[signerIndex].idNum;
+  if (entered !== expected) {
+    document.getElementById('idError').style.display = 'block';
+    document.getElementById('idInput').style.borderColor = '#e53e3e';
+    return;
+  }
+  document.getElementById('verifyScreen').style.display = 'none';
+  document.getElementById('approvalScreen').style.display = 'block';
+  renderFormData();
+  initSignaturePad();
+};
+
+function renderFormData() {
+  const d = formData;
+  const types = (d.serviceTypes||[]).join(', ');
+  const bs = d.budgetSource === 'תבר' ? 'תב"ר' : d.budgetSource === 'רגיל' ? 'תקציב רגיל' : d.budgetSource;
+  document.getElementById('formPreview').innerHTML = `
+    <div class="preview-section">
+      <div class="preview-title">פרטי מגיש הבקשה</div>
+      <div class="preview-grid">
+        <div class="preview-field"><span class="pf-label">אגף</span><span class="pf-val">${d.deptName||''}</span></div>
+        <div class="preview-field"><span class="pf-label">שם מגיש</span><span class="pf-val">${d.submitterName||''}</span></div>
+        <div class="preview-field"><span class="pf-label">תפקיד</span><span class="pf-val">${d.submitterRole||''}</span></div>
+        <div class="preview-field"><span class="pf-label">טלפון</span><span class="pf-val">${d.phone||''}</span></div>
+      </div>
+    </div>
+    <div class="preview-section">
+      <div class="preview-title">תיאור ההתקשרות</div>
+      <div class="preview-grid">
+        <div class="preview-field span2"><span class="pf-label">סוג שירות</span><span class="pf-val">${types}</span></div>
+        <div class="preview-field span2"><span class="pf-label">פירוט שירות</span><span class="pf-val">${d.serviceDesc||''}</span></div>
+        <div class="preview-field span2"><span class="pf-label">צורך למכרז</span><span class="pf-val">${d.procurementNeed||''}</span></div>
+        <div class="preview-field"><span class="pf-label">דרישות סף חריגות</span><span class="pf-val">${d.specialReqs||''}</span></div>
+        <div class="preview-field"><span class="pf-label">תחילת התקשרות</span><span class="pf-val">${d.startDate||''}</span></div>
+      </div>
+    </div>
+    <div class="preview-section">
+      <div class="preview-title">פירוט תקציב</div>
+      <div class="preview-grid">
+        <div class="preview-field"><span class="pf-label">סכום מוערך</span><span class="pf-val">₪${Number(d.totalAmount||0).toLocaleString('he-IL')}</span></div>
+        <div class="preview-field"><span class="pf-label">מקור תקציבי</span><span class="pf-val">${bs}</span></div>
+        <div class="preview-field span2"><span class="pf-label">תחשיב</span><span class="pf-val">${d.budgetCalc||''}</span></div>
+      </div>
+    </div>
+    <div class="preview-section">
+      <div class="preview-title">מצב אישורים</div>
+      ${d.signers.map((s,i) => `
+        <div class="signer-status ${i===signerIndex?'current':''}">
+          <span class="ss-role">${s.role}</span>
+          <span class="ss-badge ${s.status}">${statusLabel(s.status, i)}</span>
+          ${s.note ? `<span class="ss-note">"${s.note}"</span>` : ''}
+        </div>`).join('')}
+    </div>`;
+}
+
+function statusLabel(status, idx) {
+  if (idx > signerIndex && status==='pending') return '⏳ ממתין';
+  if (idx < signerIndex && status==='approved') return '✓ אושר';
+  if (status==='approved') return '✓ אושר';
+  if (status==='rejected') return '✗ נדחה';
+  if (status==='returned') return '↩ הוחזר';
+  if (idx===signerIndex) return '👤 בטיפולך';
+  return '⏳ ממתין';
+}
+
+function initSignaturePad() {
+  const canvas = document.getElementById('signatureCanvas');
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+  let lastX, lastY;
+
+  ctx.strokeStyle = '#1a4b8c';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if (e.touches) {
+      return [(e.touches[0].clientX - rect.left) * scaleX, (e.touches[0].clientY - rect.top) * scaleY];
+    }
+    return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
+  }
+
+  function startDraw(e) { e.preventDefault(); drawing=true; [lastX,lastY]=getPos(e); }
+  function draw(e) {
+    e.preventDefault();
+    if (!drawing) return;
+    const [x,y] = getPos(e);
+    ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+    [lastX,lastY]=[x,y];
+  }
+  function endDraw() { drawing=false; signatureData=canvas.toDataURL(); }
+
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', draw);
+  canvas.addEventListener('mouseup', endDraw);
+  canvas.addEventListener('touchstart', startDraw, {passive:false});
+  canvas.addEventListener('touchmove', draw, {passive:false});
+  canvas.addEventListener('touchend', endDraw);
+
+  window.clearSignature = function() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    signatureData = null;
+  };
+}
+
+window.submitAction = async function(action) {
+  if (!signatureData || signatureData === document.getElementById('signatureCanvas').toDataURL()) {
+    // Check if canvas is blank
+    const canvas = document.getElementById('signatureCanvas');
+    const ctx = canvas.getContext('2d');
+    const blank = document.createElement('canvas');
+    blank.width = canvas.width; blank.height = canvas.height;
+    if (canvas.toDataURL() === blank.toDataURL()) {
+      alert('יש לחתום לפני האישור');
+      return;
+    }
+  }
+
+  const note = document.getElementById('noteInput').value.trim();
+  if ((action==='rejected'||action==='returned') && !note) {
+    document.getElementById('noteInput').style.borderColor='#e53e3e';
+    document.getElementById('noteError').style.display='block';
+    return;
+  }
+
+  const btn = document.getElementById('btn_'+action);
+  if(btn) { btn.disabled=true; btn.textContent='שולח...'; }
+
+  try {
+    const docRef = doc(db, "tenders", formId);
+    const signerEmail = formData.signers[signerIndex].email;
+    const signerName = formData.signers[signerIndex].idNum;
+
+    // Update this signer
+    const updatedSigners = [...formData.signers];
+    updatedSigners[signerIndex] = {
+      ...updatedSigners[signerIndex],
+      status: action,
+      note,
+      signedAt: new Date().toISOString(),
+      signature: signatureData,
+    };
+
+    let newStatus = formData.status;
+    let nextIdx = signerIndex + 1;
+
+    if (action === 'approved') {
+      if (nextIdx >= formData.signers.length) {
+        newStatus = 'completed';
+      } else {
+        newStatus = 'in_progress';
+      }
+    } else if (action === 'rejected') {
+      newStatus = 'rejected';
+    } else if (action === 'returned') {
+      newStatus = 'returned_to_submitter';
+    }
+
+    await updateDoc(docRef, {
+      signers: updatedSigners,
+      currentSignerIndex: action==='approved' ? nextIdx : signerIndex,
+      status: newStatus,
+      updatedAt: serverTimestamp(),
+    });
+
+    // Send next email via Apps Script
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        action: action==='approved' && nextIdx < formData.signers.length ? 'sendApprovalEmail' :
+                action==='approved' ? 'sendCompletedEmail' :
+                action==='rejected' ? 'sendRejectedEmail' : 'sendReturnedEmail',
+        formId,
+        signerIndex: nextIdx,
+        signerEmail: action==='approved' && nextIdx < formData.signers.length ? formData.signers[nextIdx].email : formData.signers[0].email,
+        signerRole: action==='approved' && nextIdx < formData.signers.length ? formData.signers[nextIdx].role : formData.signers[0].role,
+        submitterName: formData.submitterName,
+        deptName: formData.deptName,
+        note,
+        prevSignerRole: formData.signers[signerIndex].role,
+        allSignerEmails: formData.signers.map(s=>s.email),
+      })
+    });
+
+    document.getElementById('approvalScreen').style.display='none';
+    document.getElementById('doneScreen').style.display='block';
+    document.getElementById('doneMsg').textContent =
+      action==='approved' ? (nextIdx >= formData.signers.length ? 'הטופס הושלם! כל הגורמים אישרו.' : 'אישרת בהצלחה. הטופס עבר לגורם הבא.') :
+      action==='rejected' ? 'הטופס נדחה.' : 'הטופס הוחזר לממלא לתיקון.';
+
+  } catch(e) {
+    alert('שגיאה: ' + e.message);
+    if(btn) { btn.disabled=false; }
+  }
+};
+
+function showError(msg) {
+  document.getElementById('loadingScreen').innerHTML = `<div style="text-align:center;padding:3rem;color:#e53e3e;font-size:1.1rem;">⚠️ ${msg}</div>`;
+}
+
+loadForm();
+</script>
+<style>
+:root { --blue:#1a4b8c; --blue-mid:#2563b0; --blue-light:#e8f0fb; --bg:#f4f6fa; --border:#cdd5e0; --success:#2d7a4f; --danger:#e53e3e; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Rubik',sans-serif; background:var(--bg); color:#1c2333; min-height:100vh; }
+.header { background:linear-gradient(135deg,var(--blue),var(--blue-mid)); color:white; padding:1.2rem 2rem; display:flex; align-items:center; gap:1rem; box-shadow:0 4px 20px rgba(26,75,140,0.3); }
+.header img { height:44px; width:auto; }
+.header h1 { font-size:1.1rem; font-weight:700; }
+.header p { font-size:0.78rem; opacity:0.75; margin-top:2px; }
+.container { max-width:820px; margin:2rem auto; padding:0 1.5rem; }
+.card { background:white; border-radius:16px; box-shadow:0 2px 16px rgba(0,0,0,0.07); overflow:hidden; margin-bottom:1.5rem; }
+.card-header { background:linear-gradient(135deg,var(--blue),var(--blue-mid)); padding:1.2rem 1.75rem; }
+.card-header h2 { color:white; font-size:1rem; font-weight:600; }
+.card-header p { color:rgba(255,255,255,0.8); font-size:0.82rem; margin-top:3px; }
+.card-body { padding:1.75rem; }
+.field { display:flex; flex-direction:column; gap:0.35rem; margin-bottom:1rem; }
+.field label { font-size:0.82rem; font-weight:600; color:#5a6478; }
+.field input, .field textarea { font-family:inherit; font-size:0.92rem; border:1.5px solid var(--border); border-radius:8px; padding:0.6rem 0.85rem; outline:none; transition:all 0.2s; background:var(--bg); }
+.field input:focus, .field textarea:focus { border-color:var(--blue-mid); background:white; box-shadow:0 0 0 3px rgba(37,99,176,0.1); }
+.field textarea { resize:vertical; min-height:70px; }
+.error-msg { color:var(--danger); font-size:0.8rem; margin-top:3px; display:none; }
+.btn { font-family:inherit; font-size:0.92rem; font-weight:600; padding:0.75rem 1.75rem; border-radius:10px; border:none; cursor:pointer; transition:all 0.2s; display:inline-flex; align-items:center; gap:0.5rem; }
+.btn-primary { background:var(--blue); color:white; }
+.btn-primary:hover { background:var(--blue-mid); }
+.btn-success { background:linear-gradient(135deg,var(--success),#1a5e3a); color:white; }
+.btn-danger { background:var(--danger); color:white; }
+.btn-warning { background:#d97706; color:white; }
+.btn:disabled { opacity:0.6; cursor:not-allowed; }
+
+/* Form preview */
+.preview-section { margin-bottom:1.5rem; }
+.preview-title { font-size:0.82rem; font-weight:700; color:var(--blue); border-bottom:2px solid var(--blue-light); padding-bottom:0.4rem; margin-bottom:0.75rem; }
+.preview-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; }
+.preview-field { display:flex; flex-direction:column; gap:2px; }
+.preview-field.span2 { grid-column:span 2; }
+.pf-label { font-size:0.75rem; color:#5a6478; font-weight:600; }
+.pf-val { font-size:0.9rem; color:#1c2333; background:var(--bg); padding:0.4rem 0.6rem; border-radius:6px; white-space:pre-wrap; }
+
+/* Signer status */
+.signer-status { display:flex; align-items:center; gap:0.75rem; padding:0.6rem 0.75rem; border-radius:8px; margin-bottom:0.4rem; background:var(--bg); }
+.signer-status.current { background:var(--blue-light); border:1.5px solid var(--blue); }
+.ss-role { font-weight:600; font-size:0.88rem; flex:1; }
+.ss-badge { font-size:0.78rem; font-weight:600; padding:0.2rem 0.6rem; border-radius:20px; background:#e5e7eb; }
+.ss-badge.approved { background:#d1fae5; color:#065f46; }
+.ss-badge.rejected { background:#fee2e2; color:#991b1b; }
+.ss-badge.returned { background:#fef3c7; color:#92400e; }
+.ss-note { font-size:0.8rem; color:#5a6478; font-style:italic; }
+
+/* Signature pad */
+.sig-container { border:2px dashed var(--border); border-radius:12px; overflow:hidden; position:relative; background:white; }
+.sig-container canvas { display:block; width:100%; height:160px; cursor:crosshair; touch-action:none; }
+.sig-hint { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#ccc; font-size:0.9rem; pointer-events:none; text-align:center; }
+.sig-clear { position:absolute; top:8px; left:8px; font-size:0.75rem; background:#f1f5f9; border:1px solid #ccc; border-radius:6px; padding:3px 8px; cursor:pointer; }
+
+/* Action buttons */
+.action-row { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1.5rem; }
+
+/* Done screen */
+.done-screen { text-align:center; padding:3rem 2rem; }
+.done-icon { width:70px; height:70px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:2rem; margin:0 auto 1.25rem; }
+.done-icon.ok { background:linear-gradient(135deg,var(--success),#1a5e3a); }
+.done-icon.no { background:var(--danger); }
+.done-icon.ret { background:#d97706; }
+
+/* Loading */
+.loading { text-align:center; padding:4rem 2rem; color:#5a6478; }
+.spinner { width:40px; height:40px; border:4px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 1rem; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+@media(max-width:600px) { .preview-grid { grid-template-columns:1fr; } .preview-field.span2 { grid-column:span 1; } .action-row { flex-direction:column; } .btn { justify-content:center; } }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <img src="ramat-gan-logo.jpg" alt="עיריית רמת גן" onerror="this.style.display='none'" />
+  <div>
+    <h1>אישור טופס יציאה למכרז</h1>
+    <p>עיריית רמת גן – אגף הכספים</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Loading -->
+  <div id="loadingScreen" class="card card-body" style="padding:4rem 2rem; text-align:center;">
+    <div class="spinner"></div>
+    <p style="color:#5a6478;">טוען טופס...</p>
+  </div>
+
+  <!-- Verify ID -->
+  <div id="verifyScreen" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>אימות זהות</h2>
+        <p>אתה מוזמן לאשר כ: <strong id="signerRoleDisplay"></strong></p>
+      </div>
+      <div class="card-body" style="max-width:360px">
+        <div class="field">
+          <label>הזן את מספר תעודת הזהות שלך לאימות</label>
+          <input type="text" id="idInput" placeholder="000000000" maxlength="9" dir="ltr" onkeyup="if(event.key==='Enter') verifyId()" />
+          <span class="error-msg" id="idError">תעודת הזהות אינה תואמת. אנא בדוק ונסה שנית.</span>
+        </div>
+        <button class="btn btn-primary" onclick="verifyId()">אמת זהות ←</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approval screen -->
+  <div id="approvalScreen" style="display:none">
+
+    <!-- Form preview -->
+    <div class="card">
+      <div class="card-header"><h2>📄 פרטי הטופס לאישורך</h2></div>
+      <div class="card-body" id="formPreview"></div>
+    </div>
+
+    <!-- Signature -->
+    <div class="card">
+      <div class="card-header">
+        <h2>✍️ חתימה דיגיטלית</h2>
+        <p>חתום באצבע או בעכבר בתוך הריבוע</p>
+      </div>
+      <div class="card-body">
+        <div class="sig-container">
+          <canvas id="signatureCanvas" width="800" height="200"></canvas>
+          <div class="sig-hint">חתום כאן</div>
+          <button class="sig-clear" onclick="clearSignature()">× נקה</button>
+        </div>
+
+        <div class="field" style="margin-top:1.25rem">
+          <label>הערה (חובה בדחייה/החזרה)</label>
+          <textarea id="noteInput" placeholder="הוסף הערה אם יש..." rows="3" oninput="document.getElementById('noteError').style.display='none'; this.style.borderColor=''"></textarea>
+          <span class="error-msg" id="noteError">יש להוסיף הערה בעת דחייה או החזרה.</span>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-success" id="btn_approved" onclick="submitAction('approved')">✓ אני מאשר</button>
+          <button class="btn btn-warning" id="btn_returned" onclick="submitAction('returned')">↩ החזר לממלא לתיקון</button>
+          <button class="btn btn-danger" id="btn_rejected" onclick="submitAction('rejected')">✗ דחה</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Done screen -->
+  <div id="doneScreen" style="display:none">
+    <div class="card">
+      <div class="card-body done-screen">
+        <div class="done-icon ok">✓</div>
+        <h2 style="font-size:1.4rem; margin-bottom:0.5rem;" id="doneMsg"></h2>
+        <p style="color:#5a6478; font-size:0.9rem; margin-top:0.5rem;">תודה על הטיפול המהיר.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
