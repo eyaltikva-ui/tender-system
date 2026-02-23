@@ -73,6 +73,7 @@
       submitterId:     document.getElementById('submitterId').value,
       submitterSig:    sigData,
       phone:           document.getElementById('phone').value,
+      submitterEmail:  document.getElementById('submitterEmail').value,
       submitDate:      document.getElementById('submitDate').value,
       serviceTypes:    Array.from(document.querySelectorAll('input[name="serviceType"]:checked')).map(x=>x.value),
       serviceDesc:     document.getElementById('serviceDesc').value,
@@ -97,6 +98,7 @@
       const docRef = await addDoc(collection(db, "tenders"), formData);
       const formId = docRef.id;
 
+      // מייל לחותם הראשון
       await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors',
@@ -108,6 +110,23 @@
           signerRole:  signers[0].role,
           submitterName: formData.submitterName,
           deptName:      formData.deptName,
+        })
+      });
+
+      // מייל אישור למגיש עם מספר הטופס
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'sendSubmitterConfirmation',
+          formId,
+          submitterEmail: formData.submitterEmail,
+          submitterName:  formData.submitterName,
+          deptName:       formData.deptName,
+          totalAmount:    formData.totalAmount,
+          budgetSource:   formData.budgetSource,
+          firstSignerRole: signers[0].role,
+          statusLink: 'https://eyaltikva-ui.github.io/tender-system/status.html?formId=' + formId,
         })
       });
 
@@ -250,6 +269,7 @@ canvas#sigCanvas{display:block;width:100%;height:140px;cursor:crosshair;touch-ac
           <div class="field"><label>תפקיד <span class="required">*</span></label><input type="text" id="submitterRole" /></div>
           <div class="field"><label>מספר ת.ז. <span class="required">*</span></label><input type="text" id="submitterId" dir="ltr" maxlength="9" /></div>
           <div class="field"><label>טלפון נייד <span class="required">*</span></label><input type="tel" id="phone" dir="ltr" /></div>
+          <div class="field span-2"><label>כתובת מייל <span class="required">*</span></label><input type="email" id="submitterEmail" dir="ltr" /></div>
           <div class="field"><label>תאריך הגשה</label><input type="date" id="submitDate" dir="ltr" /></div>
         </div>
         <div class="nav-buttons"><span></span><button class="btn btn-primary" onclick="nextStep(1)">המשך ←</button></div>
@@ -417,7 +437,7 @@ function prevStep(f) { goToStep(f-1); }
 
 function validateStep(step) {
   const req = {
-    1:['deptName','submitterName','submitterRole','submitterId','phone'],
+    1:['deptName','submitterName','submitterRole','submitterId','phone','submitterEmail'],
     2:['serviceDesc','procurementNeed','startDate'],
     3:['totalAmount','budgetCalc'],
     4:[]
