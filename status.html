@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>מעקב טופס מכרז – עיריית רמת גן</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDm27uYjwTMr4BnpGQzux7eS6bEJoNn_dM",
+    authDomain: "rg-tender-approvals.firebaseapp.com",
+    projectId: "rg-tender-approvals",
+    storageBucket: "rg-tender-approvals.firebasestorage.app",
+    messagingSenderId: "309967399008",
+    appId: "1:309967399008:web:c8879c0d97f0fe63e33b05"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // אם יש formId ב-URL — טען אוטומטית
+  const urlParams = new URLSearchParams(location.search);
+  const urlFormId = urlParams.get('formId');
+  if (urlFormId) {
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('formIdInput').value = urlFormId;
+      loadStatus(urlFormId);
+    });
+  }
+
+  window.searchForm = async function() {
+    const id = document.getElementById('formIdInput').value.trim();
+    if (!id) return;
+    await loadStatus(id);
+  };
+
+  async function loadStatus(formId) {
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = '<div class="loading-msg">טוען...</div>';
+
+    try {
+      const snap = await getDoc(doc(db, 'tenders', formId));
+      if (!snap.exists()) {
+        resultDiv.innerHTML = '<div class="error-msg">טופס לא נמצא. בדוק את מספר הטופס.</div>';
+        return;
+      }
+      renderStatus(snap.data(), formId);
+    } catch(e) {
+      resultDiv.innerHTML = '<div class="error-msg">שגיאה: ' + e.message + '</div>';
+    }
+  }
+
+  function renderStatus(d, formId) {
+    const statusMap = {
+      in_progress: { label: 'בתהליך אישור', color: '#d97706', bg: '#fffbeb', icon: '⏳' },
+      completed:   { label: 'אושר במלואו',  color: '#2d7a4f', bg: '#f0fdf4', icon: '✅' },
+      rejected:    { label: 'נדחה',          color: '#dc2626', bg: '#fef2f2', icon: '❌' },
+      return:      { label: 'הוחזר לתיקון', color: '#d97706', bg: '#fffbeb', icon: '↩️' },
+    };
+    const st = statusMap[d.status] || statusMap['in_progress'];
+    const signers = d.signers || [];
+    const current = d.currentSignerIndex || 0;
+
+    const chainHtml = signers.map((s, i) => {
+      let icon, stepColor, stepBg, note = '';
+      if (s.status === 'approved') {
+        icon = '✓'; stepColor = '#2d7a4f'; stepBg = '#f0fdf4';
+        const dt = s.signedAt ? new Date(s.signedAt).toLocaleDateString('he-IL') : '';
+        note = `<div class="step-meta">${s.name || ''} ${dt ? '| ' + dt : ''}</div>`;
+      } else if (s.status === 'rejected') {
+        icon = '✗'; stepColor = '#dc2626'; stepBg = '#fef2f2';
+        note = s.note ? `<div class="step-note">סיבה: ${s.note}</div>` : '';
+      } else if (s.status === 'return') {
+        icon = '↩'; stepColor = '#d97706'; stepBg = '#fffbeb';
+        note = s.note ? `<div class="step-note">הערה: ${s.note}</div>` : '';
+      } else if (i === current && d.status !== 'completed' && d.status !== 'rejected') {
+        icon = '⏳'; stepColor = '#2563b0'; stepBg = '#e8f0fb';
+        note = '<div class="step-meta waiting">ממתין לאישור</div>';
+      } else {
+        icon = i + 1; stepColor = '#94a3b8'; stepBg = '#f8fafc';
+      }
+
+      const connector = i < signers.length - 1
+        ? `<div class="connector" style="background:${s.status==='approved'?'#2d7a4f':'#e2e8f0'}"></div>`
+        : '';
+
+      return `
+        <div class="step-wrap">
+          <div class="step" style="border-color:${stepColor};background:${stepBg}">
+            <div class="step-icon" style="background:${stepColor}">${icon}</div>
+            <div class="step-body">
+              <div class="step-role" style="color:${stepColor}">${s.role}</div>
+              ${note}
+            </div>
+          </div>
+          ${connector}
+        </div>`;
+    }).join('');
+
+    const submittedDate = d.submitDate || d.createdAt?.toDate?.()?.toLocaleDateString('he-IL') || '';
+
+    document.getElementById('result').innerHTML = `
+      <div class="status-card">
+        <div class="status-banner" style="background:${st.bg};border-color:${st.color}">
+          <span class="status-icon">${st.icon}</span>
+          <div>
+            <div class="status-label" style="color:${st.color}">${st.label}</div>
+            <div class="status-sub">${d.deptName} | ${d.submitterName}</div>
+          </div>
+          <div class="form-id-badge">#${formId.slice(-6)}</div>
+        </div>
+
+        <div class="info-row">
+          <div class="info-item"><span class="info-label">אגף</span><span>${d.deptName}</span></div>
+          <div class="info-item"><span class="info-label">מגיש</span><span>${d.submitterName} – ${d.submitterRole}</span></div>
+          <div class="info-item"><span class="info-label">סכום</span><span>₪${Number(d.totalAmount||0).toLocaleString('he-IL')}</span></div>
+          <div class="info-item"><span class="info-label">מקור תקציבי</span><span>${d.budgetSource === 'תבר' ? 'תב"ר' : 'תקציב רגיל'}</span></div>
+          ${submittedDate ? `<div class="info-item"><span class="info-label">תאריך הגשה</span><span>${submittedDate}</span></div>` : ''}
+        </div>
+
+        <div class="chain-section">
+          <div class="chain-title">סבב חתימות</div>
+          <div class="chain">${chainHtml}</div>
+        </div>
+      </div>`;
+  }
+</script>
+<style>
+:root{--blue:#1a4b8c;--blue-mid:#2563b0;--blue-light:#e8f0fb;--text:#1c2333;--muted:#5a6478;--border:#cdd5e0;--bg:#f4f6fa;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Rubik',sans-serif;background:var(--bg);color:var(--text);padding:0 0 4rem;}
+.header{background:linear-gradient(135deg,var(--blue),var(--blue-mid));color:white;padding:1.25rem 2rem;display:flex;align-items:center;gap:1rem;box-shadow:0 4px 20px rgba(26,75,140,0.3);}
+.header img{height:45px;}
+.header h1{font-size:1.1rem;font-weight:700;}
+.header p{font-size:0.78rem;opacity:0.75;margin-top:2px;}
+.container{max-width:700px;margin:2rem auto;padding:0 1.5rem;}
+.search-card{background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.07);padding:1.75rem;margin-bottom:1.5rem;}
+.search-card h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1rem;}
+.search-row{display:flex;gap:0.75rem;}
+.search-input{flex:1;font-family:inherit;font-size:0.9rem;border:1.5px solid var(--border);border-radius:8px;padding:0.65rem 1rem;color:var(--text);background:var(--bg);outline:none;direction:ltr;}
+.search-input:focus{border-color:var(--blue-mid);background:white;box-shadow:0 0 0 3px rgba(37,99,176,0.1);}
+.search-btn{font-family:inherit;font-size:0.9rem;font-weight:600;padding:0.65rem 1.5rem;background:var(--blue);color:white;border:none;border-radius:8px;cursor:pointer;}
+.search-btn:hover{background:var(--blue-mid);}
+.loading-msg{text-align:center;padding:2rem;color:var(--muted);}
+.error-msg{text-align:center;padding:1.5rem;color:#dc2626;background:#fef2f2;border-radius:10px;border:1px solid #fecaca;}
+/* Status card */
+.status-card{background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.07);overflow:hidden;}
+.status-banner{display:flex;align-items:center;gap:1rem;padding:1.25rem 1.5rem;border-bottom:2px solid;border-top-left-radius:16px;border-top-right-radius:16px;}
+.status-icon{font-size:1.8rem;flex-shrink:0;}
+.status-label{font-size:1.1rem;font-weight:700;}
+.status-sub{font-size:0.82rem;color:var(--muted);margin-top:2px;}
+.form-id-badge{margin-right:auto;background:white;color:var(--muted);font-size:0.75rem;font-weight:700;padding:0.25rem 0.75rem;border-radius:20px;border:1px solid var(--border);direction:ltr;flex-shrink:0;}
+.info-row{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--bg);}
+.info-item{display:flex;gap:0.5rem;align-items:baseline;padding:0.6rem 1.5rem;font-size:0.84rem;width:50%;border-bottom:1px solid var(--bg);}
+.info-label{font-weight:600;color:var(--muted);white-space:nowrap;}
+.chain-section{padding:1.5rem;}
+.chain-title{font-size:0.85rem;font-weight:700;color:var(--muted);margin-bottom:1.25rem;text-transform:uppercase;letter-spacing:0.05em;}
+.chain{display:flex;flex-direction:column;gap:0;}
+.step-wrap{display:flex;flex-direction:column;align-items:flex-start;}
+.step{display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1.1rem;border:1.5px solid;border-radius:10px;width:100%;transition:all 0.2s;}
+.step-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:0.85rem;flex-shrink:0;}
+.step-role{font-weight:600;font-size:0.9rem;}
+.step-meta{font-size:0.75rem;color:var(--muted);margin-top:2px;}
+.step-meta.waiting{color:#2563b0;font-weight:500;}
+.step-note{font-size:0.78rem;color:#dc2626;margin-top:3px;}
+.connector{width:2px;height:16px;margin-right:20px;margin-top:2px;margin-bottom:2px;border-radius:2px;}
+@media(max-width:500px){.info-item{width:100%;}.search-row{flex-direction:column;}}
+</style>
+</head>
+<body>
+<header class="header">
+  <img src="ramat-gan-logo.jpg" alt="עיריית רמת גן" onerror="this.style.display='none'" />
+  <div>
+    <h1>מעקב אחר טופס מכרז</h1>
+    <p>עיריית רמת גן – אגף הכספים</p>
+  </div>
+</header>
+
+<div class="container">
+  <div class="search-card">
+    <h2>🔍 הזן מספר טופס לבדיקת סטטוס</h2>
+    <div class="search-row">
+      <input class="search-input" id="formIdInput" type="text" placeholder="מספר הטופס מהאישור שקיבלת" />
+      <button class="search-btn" onclick="searchForm()">בדוק</button>
+    </div>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+document.getElementById('formIdInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchForm();
+});
+</script>
+</body>
+</html>
