@@ -18,7 +18,7 @@
     appId: "1:309967399008:web:c8879c0d97f0fe63e33b05"
   };
 
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzADSQjmSErfbHTgZP8uK48dg_t1LPapRC7Wxx5nglSP2vW5DX1trDnOjMyHcO_78m1RQ/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzG5ci4Osuv2MXMnYInLguKgtykZc8W7fgict1Afm-MnRsojPKkem6FNyYjaC4svY3AEA/exec";
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
@@ -113,17 +113,14 @@
     // שלח OTP במייל
     const signerEmail = formData.signers[signerIdx].email;
     const signerRole  = formData.signers[signerIdx].role;
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({
-        action: 'sendOTPEmail',
-        signerEmail,
-        signerRole,
-        otp: currentOTP,
-        deptName: formData.deptName,
-      })
+    const params = new URLSearchParams({
+      action: 'sendOTPEmail',
+      signerEmail,
+      signerRole,
+      otp: currentOTP,
+      deptName: formData.deptName,
     });
+    await fetch(APPS_SCRIPT_URL + '?' + params.toString(), { mode: 'no-cors' });
 
     // הצג מסך OTP
     document.getElementById('mainContent').style.display = 'none';
